@@ -1,5 +1,6 @@
 package com.dsmp.profitcalc.client.updater;
 
+import com.dsmp.profitcalc.client.ui.RestartModalScreen;
 import com.dsmp.profitcalc.client.ui.UpdateModalScreen;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -154,7 +155,7 @@ public class AutoUpdater {
                             if (mc != null) {
                                 mc.execute(() -> {
                                     if (mc.player != null) {
-                                        mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Outdated! Downloading v" + latestVersion + " from GitHub... Please wait!"), false);
+                                        mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Downloading v" + latestVersion + " from GitHub... Please wait!"), false);
                                     }
                                 });
                             }
@@ -162,17 +163,33 @@ public class AutoUpdater {
                             Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
                             Path newJarPath = modsDir.resolve("donut-smp-profit-calc-" + latestVersion + ".jar");
 
+                            // 1. Download new version asset
                             URL url = URI.create(latestDownloadUrl).toURL();
                             try (InputStream in = url.openStream()) {
                                 Files.copy(in, newJarPath, StandardCopyOption.REPLACE_EXISTING);
                             }
 
+                            // 2. Delete old versions of donut-smp-profit-calc-*.jar
+                            try (var stream = Files.list(modsDir)) {
+                                stream.filter(p -> p.getFileName().toString().toLowerCase().startsWith("donut-smp-profit-calc")
+                                                && p.getFileName().toString().endsWith(".jar")
+                                                && !p.getFileName().toString().equalsIgnoreCase(newJarPath.getFileName().toString()))
+                                      .forEach(p -> {
+                                          try {
+                                              Files.deleteIfExists(p);
+                                              LOGGER.info("[Auto Updater] Deleted old mod jar: {}", p.getFileName());
+                                          } catch (Exception e) {
+                                              p.toFile().deleteOnExit();
+                                          }
+                                      });
+                            } catch (Exception ignored) {}
+
+                            // 3. Open RestartModalScreen popup!
                             if (mc != null) {
                                 mc.execute(() -> {
+                                    mc.setScreen(new RestartModalScreen(latestVersion));
                                     if (mc.player != null) {
-                                        mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully to mods/ folder! Restart Minecraft to apply."), false);
-                                    } else {
-                                        LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods/ directory!", latestVersion);
+                                        mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " installed! Restart Minecraft to apply."), false);
                                     }
                                 });
                             }
