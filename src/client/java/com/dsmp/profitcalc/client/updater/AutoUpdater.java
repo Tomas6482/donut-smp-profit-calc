@@ -2,8 +2,12 @@ package com.dsmp.profitcalc.client.updater;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,8 +33,35 @@ public class AutoUpdater {
     private static String latestVersion = "";
     private static String latestDownloadUrl = "";
     private static boolean updateAvailable = false;
+    private static boolean registeredMenuListener = false;
+
+    public static String getLatestVersion() {
+        return latestVersion;
+    }
+
+    public static boolean isUpdateAvailable() {
+        return updateAvailable;
+    }
 
     public static void checkOnStartup() {
+        if (!registeredMenuListener) {
+            registeredMenuListener = true;
+            ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+                if (screen instanceof TitleScreen && updateAvailable) {
+                    int btnWidth = 180;
+                    int btnHeight = 20;
+                    int x = (scaledWidth - btnWidth) / 2;
+                    int y = scaledHeight / 4 + 132;
+
+                    Button updateBtn = Button.builder(Component.literal("🍩 Update Donut Profit (v" + latestVersion + ")"), btn -> {
+                        downloadAndInstall();
+                    }).bounds(x, y, btnWidth, btnHeight).build();
+
+                    Screens.getButtons(screen).add(updateBtn);
+                }
+            });
+        }
+
         CompletableFuture.runAsync(() -> {
             try {
                 HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -91,6 +122,8 @@ public class AutoUpdater {
 
                 if (mc.player != null) {
                     mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully! Please restart Minecraft to apply."), false);
+                } else {
+                    LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods directory!", latestVersion);
                 }
             } catch (Exception e) {
                 LOGGER.error("Failed to download mod update", e);
