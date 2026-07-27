@@ -30,13 +30,17 @@ public class AutoUpdater {
     private static final String CURRENT_VERSION = "1.0.0";
     private static final Gson GSON = new Gson();
 
-    private static String latestVersion = "";
+    private static String latestVersion = "1.0.0";
     private static String latestDownloadUrl = "";
     private static boolean updateAvailable = false;
     private static boolean registeredMenuListener = false;
 
     public static String getLatestVersion() {
         return latestVersion;
+    }
+
+    public static String getCurrentVersion() {
+        return CURRENT_VERSION;
     }
 
     public static boolean isUpdateAvailable() {
@@ -68,9 +72,14 @@ public class AutoUpdater {
     private static void fetchManifestAsync() {
         CompletableFuture.runAsync(() -> {
             try {
-                HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .followRedirects(HttpClient.Redirect.ALWAYS)
+                        .build();
+
                 HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(UPDATE_MANIFEST_URL + "?nocache=" + System.currentTimeMillis()))
+                        .uri(URI.create(UPDATE_MANIFEST_URL + "?t=" + System.currentTimeMillis()))
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DonutProfitCalcMod")
                         .timeout(Duration.ofSeconds(5))
                         .GET()
                         .build();
@@ -89,7 +98,7 @@ public class AutoUpdater {
                             Minecraft mc = Minecraft.getInstance();
                             if (mc != null && mc.player != null) {
                                 mc.player.displayClientMessage(Component.literal(
-                                        "§a§l[Donut Profit] §fNew update §e" + latestVersion + " §fis available! Type §b/profit update §fto install."), false);
+                                        "§a§l[Donut Profit] §fNew update §e" + latestVersion + " §fis available! (Installed: v" + CURRENT_VERSION + "). Type §b/profit update §fto install."), false);
                             }
                         }
                     }
@@ -103,29 +112,40 @@ public class AutoUpdater {
     public static void downloadAndInstall() {
         CompletableFuture.runAsync(() -> {
             Minecraft mc = Minecraft.getInstance();
-            try {
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Checking GitHub for updates..."), false);
-                }
+            if (mc.player != null) {
+                mc.player.displayClientMessage(Component.literal("§e[Donut Profit] Checking GitHub... Installed: §b" + CURRENT_VERSION), false);
+            }
 
-                HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+            try {
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(8))
+                        .followRedirects(HttpClient.Redirect.ALWAYS)
+                        .build();
+
                 HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(UPDATE_MANIFEST_URL + "?nocache=" + System.currentTimeMillis()))
-                        .timeout(Duration.ofSeconds(5))
+                        .uri(URI.create(UPDATE_MANIFEST_URL + "?t=" + System.currentTimeMillis()))
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DonutProfitCalcMod")
+                        .timeout(Duration.ofSeconds(8))
                         .GET()
                         .build();
 
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                LOGGER.info("[Donut Profit] HTTP Response code: {}", response.statusCode());
+
                 if (response.statusCode() == 200 && response.body() != null) {
                     JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
                     if (json != null && json.has("version")) {
                         latestVersion = json.get("version").getAsString();
                         latestDownloadUrl = json.has("download_url") ? json.get("download_url").getAsString() : "";
 
+                        if (mc.player != null) {
+                            mc.player.displayClientMessage(Component.literal("§e[Donut Profit] GitHub Latest: §a" + latestVersion + " §e| Installed: §b" + CURRENT_VERSION), false);
+                        }
+
                         if (isNewer(latestVersion, CURRENT_VERSION)) {
                             updateAvailable = true;
                             if (mc.player != null) {
-                                mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Downloading v" + latestVersion + "... Please wait!"), false);
+                                mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Outdated! Downloading v" + latestVersion + " from GitHub... Please wait!"), false);
                             }
 
                             Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
@@ -137,9 +157,14 @@ public class AutoUpdater {
                             }
 
                             if (mc.player != null) {
-                                mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully to mods/ directory! Please restart Minecraft to apply."), false);
+                                mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully to mods/ folder! Restart Minecraft to apply."), false);
                             } else {
                                 LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods/ directory!", latestVersion);
+                            }
+                            return;
+                        } else {
+                            if (mc.player != null) {
+                                mc.player.displayClientMessage(Component.literal("§a[Donut Profit] You are up to date! Installed: v" + CURRENT_VERSION + " | GitHub: v" + latestVersion), false);
                             }
                             return;
                         }
@@ -147,21 +172,22 @@ public class AutoUpdater {
                 }
 
                 if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] You are already on the latest version (v" + CURRENT_VERSION + ")."), false);
+                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] GitHub returned HTTP code: " + response.statusCode()), false);
                 }
             } catch (Exception e) {
                 LOGGER.error("Failed to check/download mod update", e);
                 if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] Failed to check update. Error: " + e.getMessage()), false);
+                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] Error checking GitHub: " + e.getClass().getSimpleName() + " - " + e.getMessage()), false);
                 }
             }
         });
     }
 
-    private static boolean isNewer(String latest, String current) {
+    public static boolean isNewer(String latest, String current) {
+        if (latest == null || current == null) return false;
         try {
-            String[] partsLatest = latest.split("\\.");
-            String[] partsCurrent = current.split("\\.");
+            String[] partsLatest = latest.trim().split("\\.");
+            String[] partsCurrent = current.trim().split("\\.");
             for (int i = 0; i < Math.max(partsLatest.length, partsCurrent.length); i++) {
                 int l = i < partsLatest.length ? Integer.parseInt(partsLatest[i].replaceAll("[^0-9]", "")) : 0;
                 int c = i < partsCurrent.length ? Integer.parseInt(partsCurrent[i].replaceAll("[^0-9]", "")) : 0;
