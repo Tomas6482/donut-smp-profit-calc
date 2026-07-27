@@ -4,6 +4,12 @@ build/
 bin/
 out/
 
+# Local libraries and zip templates
+*.jar
+*.zip
+donut-smp-order-system-explained.md
+gh
+
 # IDE files
 .idea/
 *.iml
