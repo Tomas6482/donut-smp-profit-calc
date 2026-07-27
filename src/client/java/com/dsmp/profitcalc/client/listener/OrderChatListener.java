@@ -15,11 +15,20 @@ import java.util.regex.Pattern;
 public class OrderChatListener {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/ChatListener");
 
-    private static final Pattern SELL_CHAT_PATTERN_1 = Pattern.compile("(?:sold|delivered)\\s+([0-9,]+x?)\\s+(.+?)\\s+(?:and\\s+)?(?:for|received)\\s+\\$?([0-9,]+(?:\\.[0-9]{1,3})?(?:e[+-]?[0-9]+)?\\s*[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern SELL_CHAT_PATTERN_2 = Pattern.compile("received\\s+\\$?([0-9,]+(?:\\.[0-9]{1,3})?(?:e[+-]?[0-9]+)?\\s*[kmbKMB]?)\\s+for\\s+(?:delivering|selling)\\s+([0-9,]+x?)\\s+(.+)", Pattern.CASE_INSENSITIVE);
+    // Pattern 1: "You delivered 1.7K Bone Blocks and received $689K" or "VELVETALLLL sold 53.5K Bone Blocks for $ 21.3M"
+    private static final Pattern SELL_CHAT_PATTERN_1 = Pattern.compile(
+            "(?:sold|delivered)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+(?:and\\s+)?(?:for|received)\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)",
+            Pattern.CASE_INSENSITIVE
+    );
 
-    private static final Pattern BUY_CONFIRM_CHAT_PATTERN = Pattern.compile("you\\s+(?:have\\s+)?ordered\\s+([0-9,]+x?)\\s*(.*)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern BUY_CHAT_PATTERN_1 = Pattern.compile("created\\s+(?:buy\\s+)?order\\s+for\\s+([0-9,]+x?)\\s+(.+?)\\s+for\\s+\\$?([0-9,]+(?:\\.[0-9]{1,3})?(?:e[+-]?[0-9]+)?\\s*[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
+    // Pattern 2: "received $689K for delivering 1.7K Bone Blocks"
+    private static final Pattern SELL_CHAT_PATTERN_2 = Pattern.compile(
+            "received\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)\\s+for\\s+(?:delivering|selling)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+)",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    private static final Pattern BUY_CONFIRM_CHAT_PATTERN = Pattern.compile("you\\s+(?:have\\s+)?ordered\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s*(.*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BUY_CHAT_PATTERN_1 = Pattern.compile("created\\s+(?:buy\\s+)?order\\s+for\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+for\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
 
     public void register() {
         ClientReceiveMessageEvents.GAME.register(this::onGameMessage);
@@ -89,7 +98,7 @@ public class OrderChatListener {
                 return;
             }
 
-            // Check SELL Messages: If GUI delivery already recorded exact numbers within 5s, skip chat parsing completely!
+            // Check SELL Messages: If GUI delivery already recorded exact numbers within 5s, skip chat parsing
             long guiTimeDiff = System.currentTimeMillis() - OrderScreenHandler.getLastGuiDeliveryTime();
             if (guiTimeDiff < 5000) {
                 if (ProfitConfig.getInstance().isVerboseLogging()) {
@@ -98,7 +107,7 @@ public class OrderChatListener {
                 return;
             }
 
-            // Check SELL Pattern 1 ("You delivered 14 Bone Blocks and received $5.6K")
+            // Check SELL Pattern 1 ("You delivered 1.7K Bone Blocks and received $689K")
             Matcher mSell1 = SELL_CHAT_PATTERN_1.matcher(text);
             if (mSell1.find()) {
                 int amount = parseAmount(mSell1.group(1));
@@ -107,7 +116,7 @@ public class OrderChatListener {
                 if (total > 0 && amount > 0) {
                     double unitPrice = total / amount;
                     if (ProfitConfig.getInstance().isVerboseLogging()) {
-                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 1 Fallback: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
+                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 1: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
                     }
                     ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, unitPrice, total));
                     return;
@@ -123,7 +132,7 @@ public class OrderChatListener {
                 if (total > 0 && amount > 0) {
                     double unitPrice = total / amount;
                     if (ProfitConfig.getInstance().isVerboseLogging()) {
-                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 2 Fallback: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
+                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 2: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
                     }
                     ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, unitPrice, total));
                     return;
@@ -139,7 +148,7 @@ public class OrderChatListener {
                 if (total > 0 && amount > 0) {
                     double unitPrice = total / amount;
                     if (ProfitConfig.getInstance().isVerboseLogging()) {
-                        LOGGER.info("[DONUT PROFIT/CHAT] Matched BUY Pattern 1 Fallback: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
+                        LOGGER.info("[DONUT PROFIT/CHAT] Matched BUY Pattern 1: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
                     }
                     ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.BUY, item, amount, unitPrice, total));
                 }
@@ -166,8 +175,22 @@ public class OrderChatListener {
     private int parseAmount(String str) {
         if (str == null) return 1;
         String clean = str.toLowerCase().replace("x", "").replace(",", "").trim();
+        if (clean.isEmpty()) return 1;
+
+        double multiplier = 1.0;
+        if (clean.endsWith("k")) {
+            multiplier = 1_000.0;
+            clean = clean.substring(0, clean.length() - 1).trim();
+        } else if (clean.endsWith("m")) {
+            multiplier = 1_000_000.0;
+            clean = clean.substring(0, clean.length() - 1).trim();
+        } else if (clean.endsWith("b")) {
+            multiplier = 1_000_000_000.0;
+            clean = clean.substring(0, clean.length() - 1).trim();
+        }
+
         try {
-            return Integer.parseInt(clean);
+            return (int) Math.round(Double.parseDouble(clean) * multiplier);
         } catch (Exception e) {
             return 1;
         }

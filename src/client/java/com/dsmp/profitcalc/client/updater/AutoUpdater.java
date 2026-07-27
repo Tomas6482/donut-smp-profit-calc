@@ -27,7 +27,7 @@ import java.util.concurrent.CompletableFuture;
 public class AutoUpdater {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/AutoUpdater");
     private static final String UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/Tomas6482/donut-smp-profit-calc/main/update.json";
-    private static final String CURRENT_VERSION = "1.0.2";
+    private static final String CURRENT_VERSION = "1.0.3";
     private static final Gson GSON = new Gson();
 
     private static String latestVersion = "1.0.2";

@@ -121,7 +121,7 @@ public class OrderScreenHandler {
                 }
             }
             OrderStatusTracker.getInstance().updateStatus(OrderState.CREATING_BUY_ORDER, info.itemName, info.pricePerItem, info.amount, "Review Order");
-        } else if (title.contains("deliver items") || title.contains("deliver")) {
+        } else if (title.contains("deliver items") || title.contains("confirm delivery") || title.contains("deliver")) {
             double price = (System.currentTimeMillis() - lastListingTime < 300000) ? lastListingPrice : 0.0;
             String item = !lastListingItem.isEmpty() ? lastListingItem : "Item";
             OrderStatusTracker.getInstance().updateStatus(OrderState.DELIVERING_ORDER, item, price, 0, "Fulfilling Order");
@@ -363,11 +363,11 @@ public class OrderScreenHandler {
 
         int delivered = 0;
 
-        // Method A: Direct inspection of top 36 container slots (slots 0..35) in delivery GUI
+        // Method A: Direct inspection of top 36 container slots (slots 0..35) in delivery GUI (including Shulker Boxes!)
         if (activeDeliveryScreen instanceof AbstractContainerScreen<?> containerScreen) {
             delivered = countItemsInDeliverySlots(containerScreen, deliveringItemName);
             if (ProfitConfig.getInstance().isVerboseLogging()) {
-                LOGGER.info("[DONUT PROFIT/DELIVER] Scanned Top 36 Delivery GUI Slots for '{}': {} items found.", deliveringItemName, delivered);
+                LOGGER.info("[DONUT PROFIT/DELIVER] Scanned Top 36 Delivery GUI Slots for '{}': {} items found (including Shulker Box contents).", deliveringItemName, delivered);
             }
         }
 
@@ -396,7 +396,7 @@ public class OrderScreenHandler {
     }
 
     /**
-     * Inspects slots 0-35 (top 4x9 container grid) of the delivery GUI
+     * Inspects slots 0-35 (top 4x9 container grid) of the delivery GUI including Shulker Boxes
      */
     private int countItemsInDeliverySlots(AbstractContainerScreen<?> containerScreen, String targetName) {
         if (containerScreen == null || containerScreen.getMenu() == null) return 0;
@@ -415,19 +415,27 @@ public class OrderScreenHandler {
             }
 
             // Inspect Shulker Box contents in slot
-            try {
-                var containerComponent = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
-                if (containerComponent != null) {
-                    for (ItemStack inner : containerComponent.nonEmptyItems()) {
-                        if (inner.isEmpty()) continue;
-                        String innerName = inner.getHoverName().getString();
-                        if (targetName.isEmpty() || innerName.toLowerCase().contains(targetName.toLowerCase())) {
-                            count += inner.getCount();
-                        }
+            count += countShulkerBoxContents(stack, targetName);
+        }
+        return count;
+    }
+
+    private int countShulkerBoxContents(ItemStack stack, String targetName) {
+        if (stack.isEmpty()) return 0;
+        int count = 0;
+
+        try {
+            var containerComponent = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
+            if (containerComponent != null) {
+                for (ItemStack inner : containerComponent.nonEmptyItems()) {
+                    if (inner.isEmpty()) continue;
+                    String innerName = inner.getHoverName().getString();
+                    if (targetName.isEmpty() || innerName.toLowerCase().contains(targetName.toLowerCase())) {
+                        count += inner.getCount();
                     }
                 }
-            } catch (Exception ignored) {}
-        }
+            }
+        } catch (Exception ignored) {}
         return count;
     }
 
@@ -444,18 +452,7 @@ public class OrderScreenHandler {
                 count += stack.getCount();
             }
 
-            try {
-                var containerComponent = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
-                if (containerComponent != null) {
-                    for (ItemStack inner : containerComponent.nonEmptyItems()) {
-                        if (inner.isEmpty()) continue;
-                        String innerName = inner.getHoverName().getString();
-                        if (targetName.isEmpty() || innerName.toLowerCase().contains(targetName.toLowerCase())) {
-                            count += inner.getCount();
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
+            count += countShulkerBoxContents(stack, targetName);
         }
         return count;
     }
