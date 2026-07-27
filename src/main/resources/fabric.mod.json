@@ -1,0 +1,39 @@
+{
+	"schemaVersion": 1,
+	"id": "donut-smp-profit-calc",
+	"version": "${version}",
+	"name": "Donut Smp Profit Calc",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/donut-smp-profit-calc/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.dsmp.profitcalc.DonutSmpProfitCalc"
+		],
+		"client": [
+			"com.dsmp.profitcalc.client.DonutSmpProfitCalcClient"
+		]
+	},
+	"mixins": [
+		"donut-smp-profit-calc.mixins.json",
+		{
+			"config": "donut-smp-profit-calc.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*",
+		"owo": "*"
+	}
+}

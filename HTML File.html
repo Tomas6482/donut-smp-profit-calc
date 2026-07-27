@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bone Flip</title>
+<style>
+  :root{
+    --bg: #0c0d0b;
+    --panel: #131512;
+    --line: #232620;
+    --bone: #e7e0c9;
+    --bone-dim: #8a8776;
+    --green: #6fcf97;
+    --green-dim: #26382c;
+    --red: #e2665f;
+    --red-dim: #3a2422;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(111,207,151,0.05), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(226,102,95,0.04), transparent 40%);
+    color: var(--bone);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 24px;
+  }
+
+  .card{
+    width:100%;
+    max-width: 420px;
+  }
+
+  .eyebrow{
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--bone-dim);
+    margin: 0 0 6px 2px;
+  }
+
+  h1{
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 28px 2px;
+    letter-spacing: -0.01em;
+  }
+
+  .field{
+    margin-bottom: 16px;
+  }
+
+  label{
+    display:flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--bone-dim);
+    margin-bottom: 6px;
+    padding: 0 2px;
+  }
+
+  label span.unit{
+    color: #5c5a4d;
+  }
+
+  .input-wrap{
+    position:relative;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    transition: border-color 0.15s ease;
+  }
+
+  .input-wrap:focus-within{
+    border-color: #4b4a3c;
+  }
+
+  input[type=number]{
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--bone);
+    font-family: "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    font-size: 17px;
+    padding: 13px 14px;
+    -moz-appearance: textfield;
+  }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input::placeholder{ color: #4a4837; }
+
+  .divider{
+    height: 1px;
+    background: var(--line);
+    margin: 24px 0 20px 0;
+  }
+
+  .stat-row{
+    display:flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 9px 2px;
+    font-size: 13px;
+    color: var(--bone-dim);
+  }
+
+  .stat-row .val{
+    font-family: "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    color: var(--bone);
+    font-size: 14px;
+  }
+
+  .result{
+    margin-top: 16px;
+    border-radius: 14px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+
+  .result.pos{ border-color: #2f4a3a; background: linear-gradient(180deg, var(--green-dim), var(--panel) 70%); }
+  .result.neg{ border-color: #4a2c29; background: linear-gradient(180deg, var(--red-dim), var(--panel) 70%); }
+
+  .result-top{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .result-label{
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--bone-dim);
+  }
+
+  .pct{
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 100px;
+    font-family: "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+  }
+  .pct.pos{ color: var(--green); background: rgba(111,207,151,0.12); border:1px solid rgba(111,207,151,0.25); }
+  .pct.neg{ color: var(--red); background: rgba(226,102,95,0.12); border:1px solid rgba(226,102,95,0.25); }
+
+  .profit-amount{
+    font-family: "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    font-size: 34px;
+    font-weight: 600;
+    margin-top: 10px;
+    letter-spacing: -0.01em;
+  }
+  .profit-amount.pos{ color: var(--green); }
+  .profit-amount.neg{ color: var(--red); }
+
+  .gauge{
+    margin-top: 16px;
+    height: 6px;
+    border-radius: 100px;
+    background: #1c1e18;
+    position: relative;
+    overflow: hidden;
+  }
+  .gauge-fill{
+    position:absolute;
+    top:0; left:0; bottom:0;
+    border-radius: 100px;
+    transition: width 0.2s ease, background 0.2s ease;
+  }
+  .gauge-mark{
+    position:absolute;
+    top:-3px;
+    width:1px;
+    height:12px;
+    background: var(--bone-dim);
+    opacity:0.5;
+  }
+  .gauge-caption{
+    display:flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #5c5a4d;
+    margin-top: 6px;
+    font-family: "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+  }
+
+  footer{
+    margin-top: 18px;
+    font-size: 11px;
+    color: #4a4837;
+    text-align:center;
+  }
+</style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="eyebrow">Donut SMP</div>
+    <h1>Bone Block Flip</h1>
+
+    <div class="field">
+      <label>Bone order price <span class="unit">per bone</span></label>
+      <div class="input-wrap">
+        <input type="number" id="bonePrice" placeholder="0" inputmode="decimal">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Bone block price <span class="unit">per block</span></label>
+      <div class="input-wrap">
+        <input type="number" id="blockPrice" placeholder="0" inputmode="decimal">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Bones buying <span class="unit">qty</span></label>
+      <div class="input-wrap">
+        <input type="number" id="boneQty" placeholder="0" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="stat-row">
+      <span>Cost to buy bones</span>
+      <span class="val" id="buyCost">—</span>
+    </div>
+    <div class="stat-row">
+      <span>Blocks craftable</span>
+      <span class="val" id="blocksCraft">—</span>
+    </div>
+    <div class="stat-row">
+      <span>Breakeven block price</span>
+      <span class="val" id="breakeven">—</span>
+    </div>
+
+    <div class="result" id="resultCard">
+      <div class="result-top">
+        <div class="result-label">Profit</div>
+        <div class="pct" id="pctBadge">0.0%</div>
+      </div>
+      <div class="profit-amount" id="profitAmount">0</div>
+
+      <div class="gauge">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-mark" id="gaugeMark"></div>
+      </div>
+      <div class="gauge-caption">
+        <span>0</span>
+        <span id="gaugeCaptionMax">block price</span>
+      </div>
+    </div>
+
+    <footer>3 bones → 1 bone block</footer>
+  </div>
+
+<script>
+  const boneEl = document.getElementById('bonePrice');
+  const blockEl = document.getElementById('blockPrice');
+  const qtyEl = document.getElementById('boneQty');
+
+  const buyCostEl = document.getElementById('buyCost');
+  const blocksCraftEl = document.getElementById('blocksCraft');
+  const breakevenEl = document.getElementById('breakeven');
+  const resultCard = document.getElementById('resultCard');
+  const profitAmountEl = document.getElementById('profitAmount');
+  const pctBadge = document.getElementById('pctBadge');
+  const gaugeFill = document.getElementById('gaugeFill');
+  const gaugeMark = document.getElementById('gaugeMark');
+  const gaugeCaptionMax = document.getElementById('gaugeCaptionMax');
+
+  const fmt = (n) => {
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
+
+  function calc(){
+    const bonePrice = parseFloat(boneEl.value) || 0;
+    const blockPrice = parseFloat(blockEl.value) || 0;
+    const qty = parseFloat(qtyEl.value) || 0;
+
+    const buyCost = bonePrice * qty;
+    const blocksCraft = qty / 3;
+    const revenue = blocksCraft * blockPrice;
+    const profit = revenue - buyCost;
+    const breakeven = bonePrice * 3;
+    const pct = buyCost > 0 ? (profit / buyCost) * 100 : 0;
+
+    buyCostEl.textContent = qty > 0 ? fmt(buyCost) : '—';
+    blocksCraftEl.textContent = qty > 0 ? fmt(blocksCraft) : '—';
+    breakevenEl.textContent = bonePrice > 0 ? fmt(breakeven) : '—';
+
+    const isPos = profit >= 0;
+    resultCard.classList.toggle('pos', isPos && buyCost > 0);
+    resultCard.classList.toggle('neg', !isPos && buyCost > 0);
+
+    profitAmountEl.textContent = (isPos ? '+' : '−') + fmt(Math.abs(profit));
+    profitAmountEl.classList.toggle('pos', isPos);
+    profitAmountEl.classList.toggle('neg', !isPos);
+
+    pctBadge.textContent = (isPos ? '+' : '') + pct.toFixed(1) + '%';
+    pctBadge.classList.toggle('pos', isPos);
+    pctBadge.classList.toggle('neg', !isPos);
+
+    // gauge: shows where block price sits relative to breakeven, scaled to 2x breakeven
+    const gaugeMax = breakeven > 0 ? breakeven * 2 : 1;
+    const blockPct = Math.min(100, (blockPrice / gaugeMax) * 100);
+    const breakevenPct = Math.min(100, (breakeven / gaugeMax) * 100);
+
+    gaugeFill.style.width = blockPct + '%';
+    gaugeFill.style.background = isPos ? 'var(--green)' : 'var(--red)';
+    gaugeMark.style.left = breakevenPct + '%';
+    gaugeCaptionMax.textContent = breakeven > 0 ? ('breakeven ' + fmt(breakeven)) : 'block price';
+  }
+
+  [boneEl, blockEl, qtyEl].forEach(el => el.addEventListener('input', calc));
+  calc();
+</script>
+
+</body>
+</html>
