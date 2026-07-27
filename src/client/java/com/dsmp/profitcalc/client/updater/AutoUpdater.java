@@ -1,12 +1,11 @@
 package com.dsmp.profitcalc.client.updater;
 
+import com.dsmp.profitcalc.client.ui.UpdateModalScreen;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
@@ -34,6 +33,7 @@ public class AutoUpdater {
     private static String latestDownloadUrl = "";
     private static boolean updateAvailable = false;
     private static boolean registeredMenuListener = false;
+    private static boolean modalShownThisSession = false;
 
     public static String getLatestVersion() {
         return latestVersion;
@@ -51,17 +51,9 @@ public class AutoUpdater {
         if (!registeredMenuListener) {
             registeredMenuListener = true;
             ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-                if (screen instanceof TitleScreen && updateAvailable) {
-                    int btnWidth = 180;
-                    int btnHeight = 20;
-                    int x = (scaledWidth - btnWidth) / 2;
-                    int y = scaledHeight / 4 + 132;
-
-                    Button updateBtn = Button.builder(Component.literal("🍩 Update Donut Profit (v" + latestVersion + ")"), btn -> {
-                        downloadAndInstall();
-                    }).bounds(x, y, btnWidth, btnHeight).build();
-
-                    Screens.getButtons(screen).add(updateBtn);
+                if (screen instanceof TitleScreen && updateAvailable && !modalShownThisSession) {
+                    modalShownThisSession = true;
+                    client.execute(() -> client.setScreen(new UpdateModalScreen()));
                 }
             });
         }
@@ -96,9 +88,16 @@ public class AutoUpdater {
                             LOGGER.info("[Donut Profit Updater] New update available: v{} (Current: v{})", latestVersion, CURRENT_VERSION);
 
                             Minecraft mc = Minecraft.getInstance();
-                            if (mc != null && mc.player != null) {
-                                mc.player.displayClientMessage(Component.literal(
-                                        "§a§l[Donut Profit] §fNew update §e" + latestVersion + " §fis available! (Installed: v" + CURRENT_VERSION + "). Type §b/profit update §fto install."), false);
+                            if (mc != null) {
+                                mc.execute(() -> {
+                                    if (mc.screen instanceof TitleScreen && !modalShownThisSession) {
+                                        modalShownThisSession = true;
+                                        mc.setScreen(new UpdateModalScreen());
+                                    } else if (mc.player != null) {
+                                        mc.player.displayClientMessage(Component.literal(
+                                                "§a§l[Donut Profit] §fNew update §e" + latestVersion + " §fis available! (Installed: v" + CURRENT_VERSION + "). Type §b/profit update §fto install."), false);
+                                    }
+                                });
                             }
                         }
                     }
@@ -112,8 +111,12 @@ public class AutoUpdater {
     public static void downloadAndInstall() {
         CompletableFuture.runAsync(() -> {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.literal("§e[Donut Profit] Checking GitHub... Installed: §b" + CURRENT_VERSION), false);
+            if (mc != null) {
+                mc.execute(() -> {
+                    if (mc.player != null) {
+                        mc.player.displayClientMessage(Component.literal("§e[Donut Profit] Checking GitHub... Installed: §b" + CURRENT_VERSION), false);
+                    }
+                });
             }
 
             try {
@@ -138,14 +141,22 @@ public class AutoUpdater {
                         latestVersion = json.get("version").getAsString();
                         latestDownloadUrl = json.has("download_url") ? json.get("download_url").getAsString() : "";
 
-                        if (mc.player != null) {
-                            mc.player.displayClientMessage(Component.literal("§e[Donut Profit] GitHub Latest: §a" + latestVersion + " §e| Installed: §b" + CURRENT_VERSION), false);
+                        if (mc != null) {
+                            mc.execute(() -> {
+                                if (mc.player != null) {
+                                    mc.player.displayClientMessage(Component.literal("§e[Donut Profit] GitHub Latest: §a" + latestVersion + " §e| Installed: §b" + CURRENT_VERSION), false);
+                                }
+                            });
                         }
 
                         if (isNewer(latestVersion, CURRENT_VERSION)) {
                             updateAvailable = true;
-                            if (mc.player != null) {
-                                mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Outdated! Downloading v" + latestVersion + " from GitHub... Please wait!"), false);
+                            if (mc != null) {
+                                mc.execute(() -> {
+                                    if (mc.player != null) {
+                                        mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Outdated! Downloading v" + latestVersion + " from GitHub... Please wait!"), false);
+                                    }
+                                });
                             }
 
                             Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
@@ -156,28 +167,44 @@ public class AutoUpdater {
                                 Files.copy(in, newJarPath, StandardCopyOption.REPLACE_EXISTING);
                             }
 
-                            if (mc.player != null) {
-                                mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully to mods/ folder! Restart Minecraft to apply."), false);
-                            } else {
-                                LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods/ directory!", latestVersion);
+                            if (mc != null) {
+                                mc.execute(() -> {
+                                    if (mc.player != null) {
+                                        mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully to mods/ folder! Restart Minecraft to apply."), false);
+                                    } else {
+                                        LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods/ directory!", latestVersion);
+                                    }
+                                });
                             }
                             return;
                         } else {
-                            if (mc.player != null) {
-                                mc.player.displayClientMessage(Component.literal("§a[Donut Profit] You are up to date! Installed: v" + CURRENT_VERSION + " | GitHub: v" + latestVersion), false);
+                            if (mc != null) {
+                                mc.execute(() -> {
+                                    if (mc.player != null) {
+                                        mc.player.displayClientMessage(Component.literal("§a[Donut Profit] You are up to date! Installed: v" + CURRENT_VERSION + " | GitHub: v" + latestVersion), false);
+                                    }
+                                });
                             }
                             return;
                         }
                     }
                 }
 
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] GitHub returned HTTP code: " + response.statusCode()), false);
+                if (mc != null) {
+                    mc.execute(() -> {
+                        if (mc.player != null) {
+                            mc.player.displayClientMessage(Component.literal("§c[Donut Profit] GitHub returned HTTP code: " + response.statusCode()), false);
+                        }
+                    });
                 }
             } catch (Exception e) {
                 LOGGER.error("Failed to check/download mod update", e);
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] Error checking GitHub: " + e.getClass().getSimpleName() + " - " + e.getMessage()), false);
+                if (mc != null) {
+                    mc.execute(() -> {
+                        if (mc.player != null) {
+                            mc.player.displayClientMessage(Component.literal("§c[Donut Profit] Error checking GitHub: " + e.getClass().getSimpleName() + " - " + e.getMessage()), false);
+                        }
+                    });
                 }
             }
         });
