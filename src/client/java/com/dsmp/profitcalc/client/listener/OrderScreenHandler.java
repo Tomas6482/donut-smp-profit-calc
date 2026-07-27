@@ -50,13 +50,19 @@ public class OrderScreenHandler {
         public long timestamp = System.currentTimeMillis();
     }
 
+    public static class StagedDelivery {
+        public String itemName = "";
+        public int amount = 0;
+        public double pricePerItem = 0.0;
+        public long timestamp = System.currentTimeMillis();
+    }
+
     private static PendingReviewOrder pendingReviewOrder = null;
+    private static StagedDelivery stagedDelivery = null;
+
     private static String lastListingItem = "";
     private static double lastListingPrice = 0.0;
     private static long lastListingTime = 0;
-
-    private static long lastGuiDeliveryTime = 0;
-    private static String lastGuiDeliveryItem = "";
 
     public static PendingReviewOrder getPendingReviewOrder() {
         if (pendingReviewOrder != null && System.currentTimeMillis() - pendingReviewOrder.timestamp > 300000) {
@@ -69,20 +75,23 @@ public class OrderScreenHandler {
         pendingReviewOrder = null;
     }
 
+    public static StagedDelivery getStagedDelivery() {
+        if (stagedDelivery != null && System.currentTimeMillis() - stagedDelivery.timestamp > 30000) {
+            stagedDelivery = null;
+        }
+        return stagedDelivery;
+    }
+
+    public static void clearStagedDelivery() {
+        stagedDelivery = null;
+    }
+
     public static double getLastListingPrice() {
         return lastListingPrice;
     }
 
     public static String getLastListingItem() {
         return lastListingItem;
-    }
-
-    public static long getLastGuiDeliveryTime() {
-        return lastGuiDeliveryTime;
-    }
-
-    public static String getLastGuiDeliveryItem() {
-        return lastGuiDeliveryItem;
     }
 
     private int initialInventoryCount = -1;
@@ -381,20 +390,19 @@ public class OrderScreenHandler {
         if (delivered <= 0 && client.player != null && initialInventoryCount >= 0) {
             int currentCount = countItemInInventory(client.player, deliveringItemName);
             delivered = initialInventoryCount - currentCount;
-            if (ProfitConfig.getInstance().isVerboseLogging()) {
-                LOGGER.info("[DONUT PROFIT/DELIVER] Fallback player inventory diff for '{}': {} items delivered.", deliveringItemName, delivered);
-            }
         }
 
         if (delivered > 0) {
-            double exactTotalGained = delivered * lastListingPrice;
-            lastGuiDeliveryTime = System.currentTimeMillis();
-            lastGuiDeliveryItem = deliveringItemName;
+            StagedDelivery staged = new StagedDelivery();
+            staged.itemName = deliveringItemName;
+            staged.amount = delivered;
+            staged.pricePerItem = lastListingPrice;
+            staged.timestamp = System.currentTimeMillis();
+            stagedDelivery = staged;
 
-            ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, deliveringItemName, delivered, lastListingPrice, exactTotalGained));
             if (ProfitConfig.getInstance().isVerboseLogging()) {
-                LOGGER.info("[DONUT PROFIT/DELIVER] Precise 4x9 GUI Delivery SELL Recorded: {} x{} @ ${}/ea (Exact Total: ${})",
-                        deliveringItemName, delivered, lastListingPrice, exactTotalGained);
+                LOGGER.info("[DONUT PROFIT/DELIVER] Staged 4x9 GUI Delivery: {} x{} @ ${}/ea. Awaiting server chat confirmation!",
+                        deliveringItemName, delivered, lastListingPrice);
             }
         } else if (ProfitConfig.getInstance().isVerboseLogging()) {
             LOGGER.info("[DONUT PROFIT/DELIVER] Delivery screen closed with 0 items delivered.");

@@ -15,13 +15,11 @@ import java.util.regex.Pattern;
 public class OrderChatListener {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/ChatListener");
 
-    // Pattern 1: "You delivered 1.7K Bone Blocks and received $689K" or "VELVETALLLL sold 53.5K Bone Blocks for $ 21.3M"
     private static final Pattern SELL_CHAT_PATTERN_1 = Pattern.compile(
             "(?:sold|delivered)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+(?:and\\s+)?(?:for|received)\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)",
             Pattern.CASE_INSENSITIVE
     );
 
-    // Pattern 2: "received $689K for delivering 1.7K Bone Blocks"
     private static final Pattern SELL_CHAT_PATTERN_2 = Pattern.compile(
             "received\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)\\s+for\\s+(?:delivering|selling)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+)",
             Pattern.CASE_INSENSITIVE
@@ -98,27 +96,36 @@ public class OrderChatListener {
                 return;
             }
 
-            // Check SELL Messages: If GUI delivery already recorded exact numbers within 5s, skip chat parsing
-            long guiTimeDiff = System.currentTimeMillis() - OrderScreenHandler.getLastGuiDeliveryTime();
-            if (guiTimeDiff < 5000) {
-                if (ProfitConfig.getInstance().isVerboseLogging()) {
-                    LOGGER.info("[DONUT PROFIT/CHAT] Ignored rounded chat sell message because precise GUI delivery was recorded {}ms ago.", guiTimeDiff);
-                }
-                return;
-            }
-
             // Check SELL Pattern 1 ("You delivered 1.7K Bone Blocks and received $689K")
             Matcher mSell1 = SELL_CHAT_PATTERN_1.matcher(text);
             if (mSell1.find()) {
-                int amount = parseAmount(mSell1.group(1));
-                String item = cleanItemName(mSell1.group(2));
-                double total = parsePrice(mSell1.group(3));
-                if (total > 0 && amount > 0) {
-                    double unitPrice = total / amount;
+                int parsedAmount = parseAmount(mSell1.group(1));
+                String parsedItem = cleanItemName(mSell1.group(2));
+                double parsedTotal = parsePrice(mSell1.group(3));
+
+                // 1. Check if we have a manual 4x9 GUI delivery staged
+                OrderScreenHandler.StagedDelivery staged = OrderScreenHandler.getStagedDelivery();
+                if (staged != null && staged.amount > 0) {
+                    int amount = staged.amount; // Use exact manual GUI item count!
+                    String item = staged.itemName;
+                    double pricePerItem = staged.pricePerItem;
+                    double exactTotal = amount * pricePerItem;
+
+                    ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, pricePerItem, exactTotal));
+                    OrderScreenHandler.clearStagedDelivery();
                     if (ProfitConfig.getInstance().isVerboseLogging()) {
-                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 1: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
+                        LOGGER.info("[DONUT PROFIT/CHAT] Confirmed SELL via Server Chat using 4x9 GUI manual count: {} x{} @ ${}/ea (Exact Total: ${})",
+                                item, amount, pricePerItem, exactTotal);
                     }
-                    ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, unitPrice, total));
+                    return;
+                }
+
+                if (parsedTotal > 0 && parsedAmount > 0) {
+                    double unitPrice = parsedTotal / parsedAmount;
+                    if (ProfitConfig.getInstance().isVerboseLogging()) {
+                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 1 Chat Fallback: {} x{} @ ${}/ea (Total: ${})", parsedItem, parsedAmount, unitPrice, parsedTotal);
+                    }
+                    ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, parsedItem, parsedAmount, unitPrice, parsedTotal));
                     return;
                 }
             }
@@ -126,15 +133,32 @@ public class OrderChatListener {
             // Check SELL Pattern 2
             Matcher mSell2 = SELL_CHAT_PATTERN_2.matcher(text);
             if (mSell2.find()) {
-                double total = parsePrice(mSell2.group(1));
-                int amount = parseAmount(mSell2.group(2));
-                String item = cleanItemName(mSell2.group(3));
-                if (total > 0 && amount > 0) {
-                    double unitPrice = total / amount;
+                double parsedTotal = parsePrice(mSell2.group(1));
+                int parsedAmount = parseAmount(mSell2.group(2));
+                String parsedItem = cleanItemName(mSell2.group(3));
+
+                OrderScreenHandler.StagedDelivery staged = OrderScreenHandler.getStagedDelivery();
+                if (staged != null && staged.amount > 0) {
+                    int amount = staged.amount;
+                    String item = staged.itemName;
+                    double pricePerItem = staged.pricePerItem;
+                    double exactTotal = amount * pricePerItem;
+
+                    ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, pricePerItem, exactTotal));
+                    OrderScreenHandler.clearStagedDelivery();
                     if (ProfitConfig.getInstance().isVerboseLogging()) {
-                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 2: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
+                        LOGGER.info("[DONUT PROFIT/CHAT] Confirmed SELL Pattern 2 via Server Chat using 4x9 GUI manual count: {} x{} @ ${}/ea (Exact Total: ${})",
+                                item, amount, pricePerItem, exactTotal);
                     }
-                    ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, unitPrice, total));
+                    return;
+                }
+
+                if (parsedTotal > 0 && parsedAmount > 0) {
+                    double unitPrice = parsedTotal / parsedAmount;
+                    if (ProfitConfig.getInstance().isVerboseLogging()) {
+                        LOGGER.info("[DONUT PROFIT/CHAT] Matched SELL Pattern 2 Chat Fallback: {} x{} @ ${}/ea (Total: ${})", parsedItem, parsedAmount, unitPrice, parsedTotal);
+                    }
+                    ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, parsedItem, parsedAmount, unitPrice, parsedTotal));
                     return;
                 }
             }
