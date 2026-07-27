@@ -88,6 +88,7 @@ public class OrderScreenHandler {
     private int initialInventoryCount = -1;
     private String deliveringItemName = "";
     private Screen activeDeliveryScreen = null;
+    private int maxDeliveryItemsSeen = 0;
 
     public void register() {
         ScreenEvents.AFTER_INIT.register(this::onScreenInit);
@@ -165,11 +166,18 @@ public class OrderScreenHandler {
         if (client == null) return;
         Screen screen = client.screen;
 
-        // Continuously scan top 36 container slots if in Delivery GUI
+        // Continuously scan top 36 container slots (4x9 grid) while inside Delivery GUI
         if (screen instanceof AbstractContainerScreen<?> containerScreen) {
             String title = screen.getTitle() != null ? screen.getTitle().getString().toLowerCase() : "";
             if (title.contains("deliver")) {
                 activeDeliveryScreen = screen;
+                int currentSeen = countItemsInDeliverySlots(containerScreen, deliveringItemName);
+                if (currentSeen > maxDeliveryItemsSeen) {
+                    maxDeliveryItemsSeen = currentSeen;
+                    if (ProfitConfig.getInstance().isVerboseLogging()) {
+                        LOGGER.info("[DONUT PROFIT/DELIVER] Scanned Delivery GUI 4x9 slots: updated max items seen -> {}", maxDeliveryItemsSeen);
+                    }
+                }
             }
         }
 
@@ -183,6 +191,7 @@ public class OrderScreenHandler {
             initialInventoryCount = -1;
             deliveringItemName = "";
             activeDeliveryScreen = null;
+            maxDeliveryItemsSeen = 0;
         }
     }
 
@@ -361,14 +370,11 @@ public class OrderScreenHandler {
     private void checkFinalDelivery(Minecraft client) {
         if (lastListingPrice <= 0) return;
 
-        int delivered = 0;
+        int delivered = maxDeliveryItemsSeen;
 
-        // Method A: Direct inspection of top 36 container slots (slots 0..35) in delivery GUI (including Shulker Boxes!)
-        if (activeDeliveryScreen instanceof AbstractContainerScreen<?> containerScreen) {
+        // Method A: Direct inspection of top 36 container slots (slots 0..35) in delivery GUI
+        if (delivered <= 0 && activeDeliveryScreen instanceof AbstractContainerScreen<?> containerScreen) {
             delivered = countItemsInDeliverySlots(containerScreen, deliveringItemName);
-            if (ProfitConfig.getInstance().isVerboseLogging()) {
-                LOGGER.info("[DONUT PROFIT/DELIVER] Scanned Top 36 Delivery GUI Slots for '{}': {} items found (including Shulker Box contents).", deliveringItemName, delivered);
-            }
         }
 
         // Method B: Fallback to player inventory difference (initial - current)
@@ -387,7 +393,7 @@ public class OrderScreenHandler {
 
             ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, deliveringItemName, delivered, lastListingPrice, exactTotalGained));
             if (ProfitConfig.getInstance().isVerboseLogging()) {
-                LOGGER.info("[DONUT PROFIT/DELIVER] Precise Delivery SELL Recorded: {} x{} @ ${}/ea (Exact Total: ${})",
+                LOGGER.info("[DONUT PROFIT/DELIVER] Precise 4x9 GUI Delivery SELL Recorded: {} x{} @ ${}/ea (Exact Total: ${})",
                         deliveringItemName, delivered, lastListingPrice, exactTotalGained);
             }
         } else if (ProfitConfig.getInstance().isVerboseLogging()) {
@@ -410,7 +416,7 @@ public class OrderScreenHandler {
             ItemStack stack = slot.getItem();
             String name = stack.getHoverName().getString();
 
-            if (targetName.isEmpty() || name.toLowerCase().contains(targetName.toLowerCase())) {
+            if (isItemMatch(name, targetName)) {
                 count += stack.getCount();
             }
 
@@ -424,19 +430,37 @@ public class OrderScreenHandler {
         if (stack.isEmpty()) return 0;
         int count = 0;
 
+        // Check DataComponents.CONTAINER
         try {
             var containerComponent = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
             if (containerComponent != null) {
                 for (ItemStack inner : containerComponent.nonEmptyItems()) {
                     if (inner.isEmpty()) continue;
                     String innerName = inner.getHoverName().getString();
-                    if (targetName.isEmpty() || innerName.toLowerCase().contains(targetName.toLowerCase())) {
+                    if (isItemMatch(innerName, targetName)) {
                         count += inner.getCount();
                     }
                 }
             }
         } catch (Exception ignored) {}
+
         return count;
+    }
+
+    private static boolean isItemMatch(String itemName, String targetName) {
+        if (targetName == null || targetName.trim().isEmpty()) return true;
+        if (itemName == null || itemName.trim().isEmpty()) return false;
+
+        String cleanItem = itemName.toLowerCase().trim();
+        String cleanTarget = targetName.toLowerCase().trim();
+
+        if (cleanItem.endsWith("s")) cleanItem = cleanItem.substring(0, cleanItem.length() - 1);
+        if (cleanTarget.endsWith("s")) cleanTarget = cleanTarget.substring(0, cleanTarget.length() - 1);
+
+        if (cleanItem.contains(cleanTarget) || cleanTarget.contains(cleanItem)) return true;
+        if (cleanItem.contains("bone") && cleanTarget.contains("bone")) return true;
+
+        return false;
     }
 
     private int countItemInInventory(net.minecraft.client.player.LocalPlayer player, String targetName) {
@@ -448,7 +472,7 @@ public class OrderScreenHandler {
             if (stack.isEmpty()) continue;
 
             String name = stack.getHoverName().getString();
-            if (targetName.isEmpty() || name.toLowerCase().contains(targetName.toLowerCase())) {
+            if (isItemMatch(name, targetName)) {
                 count += stack.getCount();
             }
 

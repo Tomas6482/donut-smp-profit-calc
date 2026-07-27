@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "changelog": "Fix Shulker Box delivery inspection and formatted K/M/B chat sales tracking",
-  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.0.3/donut-smp-profit-calc-1.0.3.jar"
+  "version": "1.0.4",
+  "changelog": "Direct 4x9 GUI container slot item & Shulker Box inspection with singular/plural item matching",
+  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.0.4/donut-smp-profit-calc-1.0.4.jar"
 }
