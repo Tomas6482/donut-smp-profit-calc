@@ -62,11 +62,15 @@ public class AutoUpdater {
             });
         }
 
+        fetchManifestAsync();
+    }
+
+    private static void fetchManifestAsync() {
         CompletableFuture.runAsync(() -> {
             try {
                 HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
                 HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(UPDATE_MANIFEST_URL))
+                        .uri(URI.create(UPDATE_MANIFEST_URL + "?nocache=" + System.currentTimeMillis()))
                         .timeout(Duration.ofSeconds(5))
                         .GET()
                         .build();
@@ -97,38 +101,58 @@ public class AutoUpdater {
     }
 
     public static void downloadAndInstall() {
-        if (!updateAvailable || latestDownloadUrl.isEmpty()) {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.literal("§c[Donut Profit] No updates currently available to install."), false);
-            }
-            return;
-        }
-
         CompletableFuture.runAsync(() -> {
             Minecraft mc = Minecraft.getInstance();
             try {
                 if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Downloading v" + latestVersion + "... Please wait!"), false);
+                    mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Checking GitHub for updates..."), false);
                 }
 
-                Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
-                Path newJarPath = modsDir.resolve("donut-smp-profit-calc-" + latestVersion + ".jar");
+                HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(UPDATE_MANIFEST_URL + "?nocache=" + System.currentTimeMillis()))
+                        .timeout(Duration.ofSeconds(5))
+                        .GET()
+                        .build();
 
-                URL url = URI.create(latestDownloadUrl).toURL();
-                try (InputStream in = url.openStream()) {
-                    Files.copy(in, newJarPath, StandardCopyOption.REPLACE_EXISTING);
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == 200 && response.body() != null) {
+                    JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
+                    if (json != null && json.has("version")) {
+                        latestVersion = json.get("version").getAsString();
+                        latestDownloadUrl = json.has("download_url") ? json.get("download_url").getAsString() : "";
+
+                        if (isNewer(latestVersion, CURRENT_VERSION)) {
+                            updateAvailable = true;
+                            if (mc.player != null) {
+                                mc.player.displayClientMessage(Component.literal("§a[Donut Profit] Downloading v" + latestVersion + "... Please wait!"), false);
+                            }
+
+                            Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
+                            Path newJarPath = modsDir.resolve("donut-smp-profit-calc-" + latestVersion + ".jar");
+
+                            URL url = URI.create(latestDownloadUrl).toURL();
+                            try (InputStream in = url.openStream()) {
+                                Files.copy(in, newJarPath, StandardCopyOption.REPLACE_EXISTING);
+                            }
+
+                            if (mc.player != null) {
+                                mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully to mods/ directory! Please restart Minecraft to apply."), false);
+                            } else {
+                                LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods/ directory!", latestVersion);
+                            }
+                            return;
+                        }
+                    }
                 }
 
                 if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§a§l[Donut Profit] Update v" + latestVersion + " downloaded successfully! Please restart Minecraft to apply."), false);
-                } else {
-                    LOGGER.info("[Donut Profit] Update v{} downloaded successfully to mods directory!", latestVersion);
+                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] You are already on the latest version (v" + CURRENT_VERSION + ")."), false);
                 }
             } catch (Exception e) {
-                LOGGER.error("Failed to download mod update", e);
+                LOGGER.error("Failed to check/download mod update", e);
                 if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] Failed to download update. Check console for details."), false);
+                    mc.player.displayClientMessage(Component.literal("§c[Donut Profit] Failed to check update. Error: " + e.getMessage()), false);
                 }
             }
         });
