@@ -56,6 +56,14 @@ public class AutoFlipCalcHandler {
     public static double autoDriedKelpPrice = 0.0;
     public static double autoCharcoalPrice = 0.0;
 
+    public static void stop() {
+        currentState = State.IDLE;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.player != null) {
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§e[Auto Flip] Cancelled."), true);
+        }
+    }
+
     public static void start() {
         start(FlipMode.BONE);
     }
@@ -95,9 +103,11 @@ public class AutoFlipCalcHandler {
     public static void onTick(Minecraft mc) {
         if (currentState == State.IDLE || mc == null || mc.player == null) return;
 
+        int delayMs = com.dsmp.profitcalc.client.config.ProfitConfig.getInstance().getRandomizedCommandDelayMs();
+
         // Handle Transitioning to /order kelp
         if (currentState == State.TRANSITIONING_TO_KELP) {
-            if (System.currentTimeMillis() - lastActionTime >= INITIAL_COMMAND_DELAY_MS) {
+            if (System.currentTimeMillis() - lastActionTime >= delayMs) {
                 currentState = State.SCANNING_KELP_PHASE;
                 pagesScanned = 0;
                 lastActionTime = System.currentTimeMillis();
@@ -111,7 +121,7 @@ public class AutoFlipCalcHandler {
 
         // Handle Transitioning to /order charcoal
         if (currentState == State.TRANSITIONING_TO_CHARCOAL) {
-            if (System.currentTimeMillis() - lastActionTime >= INITIAL_COMMAND_DELAY_MS) {
+            if (System.currentTimeMillis() - lastActionTime >= delayMs) {
                 currentState = State.SCANNING_CHARCOAL_PHASE;
                 pagesScanned = 0;
                 lastActionTime = System.currentTimeMillis();

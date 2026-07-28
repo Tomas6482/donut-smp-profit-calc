@@ -44,6 +44,68 @@ public class ProfitConfig {
     private String savedCharcoalPrice = "50";
     private String savedBonesQty = "100k";
 
+    private String savedOakLogPrice = "24";
+    private String savedOakPlanksPrice = "8";
+    private String savedPistonPrice = "260";
+    private String savedSlimeballPrice = "150";
+    private String savedStickyPistonPrice = "500";
+    private String savedGoldIngotPrice = "15";
+    private String savedApplePrice = "10";
+    private String savedGapplePrice = "200";
+    private String savedBookPrice = "50";
+    private String savedBookshelfPrice = "500";
+
+    public String getSavedOakLogPrice() { return savedOakLogPrice; }
+    public void setSavedOakLogPrice(String val) { this.savedOakLogPrice = val; save(); }
+
+    public String getSavedOakPlanksPrice() { return savedOakPlanksPrice; }
+    public void setSavedOakPlanksPrice(String val) { this.savedOakPlanksPrice = val; save(); }
+
+    public String getSavedPistonPrice() { return savedPistonPrice; }
+    public void setSavedPistonPrice(String val) { this.savedPistonPrice = val; save(); }
+
+    public String getSavedSlimeballPrice() { return savedSlimeballPrice; }
+    public void setSavedSlimeballPrice(String val) { this.savedSlimeballPrice = val; save(); }
+
+    public String getSavedStickyPistonPrice() { return savedStickyPistonPrice; }
+    public void setSavedStickyPistonPrice(String val) { this.savedStickyPistonPrice = val; save(); }
+
+    public String getSavedGoldIngotPrice() { return savedGoldIngotPrice; }
+    public void setSavedGoldIngotPrice(String val) { this.savedGoldIngotPrice = val; save(); }
+
+    public String getSavedApplePrice() { return savedApplePrice; }
+    public void setSavedApplePrice(String val) { this.savedApplePrice = val; save(); }
+
+    public String getSavedGapplePrice() { return savedGapplePrice; }
+    public void setSavedGapplePrice(String val) { this.savedGapplePrice = val; save(); }
+
+    public String getSavedBookPrice() { return savedBookPrice; }
+    public void setSavedBookPrice(String val) { this.savedBookPrice = val; save(); }
+
+    public String getSavedBookshelfPrice() { return savedBookshelfPrice; }
+    public void setSavedBookshelfPrice(String val) { this.savedBookshelfPrice = val; save(); }
+
+    // Unified Configurable Command Delays (Custom Min/Max Textboxes, default 400-600ms)
+    private int commandMinDelayMs = 400;
+    private int commandMaxDelayMs = 600;
+    private boolean useGuiSearchBypass = true;
+
+    public int getCommandMinDelayMs() { return commandMinDelayMs > 0 ? commandMinDelayMs : 400; }
+    public void setCommandMinDelayMs(int ms) { this.commandMinDelayMs = Math.max(100, ms); save(); }
+
+    public int getCommandMaxDelayMs() { return commandMaxDelayMs > 0 ? commandMaxDelayMs : 600; }
+    public void setCommandMaxDelayMs(int ms) { this.commandMaxDelayMs = Math.max(commandMinDelayMs, ms); save(); }
+
+    public int getRandomizedCommandDelayMs() {
+        int min = getCommandMinDelayMs();
+        int max = getCommandMaxDelayMs();
+        if (max <= min) return min;
+        return min + java.util.concurrent.ThreadLocalRandom.current().nextInt(max - min + 1);
+    }
+
+    public boolean isUseGuiSearchBypass() { return useGuiSearchBypass; }
+    public void setUseGuiSearchBypass(boolean val) { this.useGuiSearchBypass = val; save(); }
+
     private ProfitConfig() {}
 
     public static ProfitConfig getInstance() {
@@ -252,6 +314,19 @@ public class ProfitConfig {
                 if (loaded.savedDriedKelpPrice != null) INSTANCE.savedDriedKelpPrice = loaded.savedDriedKelpPrice;
                 if (loaded.savedCharcoalPrice != null) INSTANCE.savedCharcoalPrice = loaded.savedCharcoalPrice;
                 if (loaded.savedBonesQty != null) INSTANCE.savedBonesQty = loaded.savedBonesQty;
+                if (loaded.savedOakLogPrice != null) INSTANCE.savedOakLogPrice = loaded.savedOakLogPrice;
+                if (loaded.savedOakPlanksPrice != null) INSTANCE.savedOakPlanksPrice = loaded.savedOakPlanksPrice;
+                if (loaded.savedPistonPrice != null) INSTANCE.savedPistonPrice = loaded.savedPistonPrice;
+                if (loaded.savedSlimeballPrice != null) INSTANCE.savedSlimeballPrice = loaded.savedSlimeballPrice;
+                if (loaded.savedStickyPistonPrice != null) INSTANCE.savedStickyPistonPrice = loaded.savedStickyPistonPrice;
+                if (loaded.savedGoldIngotPrice != null) INSTANCE.savedGoldIngotPrice = loaded.savedGoldIngotPrice;
+                if (loaded.savedApplePrice != null) INSTANCE.savedApplePrice = loaded.savedApplePrice;
+                if (loaded.savedGapplePrice != null) INSTANCE.savedGapplePrice = loaded.savedGapplePrice;
+                if (loaded.savedBookPrice != null) INSTANCE.savedBookPrice = loaded.savedBookPrice;
+                if (loaded.savedBookshelfPrice != null) INSTANCE.savedBookshelfPrice = loaded.savedBookshelfPrice;
+                if (loaded.commandMinDelayMs > 0) INSTANCE.commandMinDelayMs = loaded.commandMinDelayMs;
+                if (loaded.commandMaxDelayMs > 0) INSTANCE.commandMaxDelayMs = loaded.commandMaxDelayMs;
+                INSTANCE.useGuiSearchBypass = loaded.useGuiSearchBypass;
             }
         } catch (Exception e) {
             LOGGER.error("Failed to load config file", e);
