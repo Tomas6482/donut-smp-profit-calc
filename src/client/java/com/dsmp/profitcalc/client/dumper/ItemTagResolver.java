@@ -9,24 +9,24 @@ import java.util.Set;
 public class ItemTagResolver {
 
     private static final List<String> LOGS = Arrays.asList(
-            "oak log", "spruce log", "birch log", "jungle log", "acacia log",
-            "dark oak log", "mangrove log", "cherry log", "pale oak log",
-            "crimson stem", "warped stem"
+            "oak_log", "spruce_log", "birch_log", "jungle_log", "acacia_log",
+            "dark_oak_log", "mangrove_log", "cherry_log", "pale_oak_log",
+            "crimson_stem", "warped_stem"
     );
 
     private static final List<String> PLANKS = Arrays.asList(
-            "oak planks", "spruce planks", "birch planks", "jungle planks", "acacia planks",
-            "dark oak planks", "mangrove planks", "cherry planks", "pale oak planks",
-            "crimson planks", "warped planks"
+            "oak_planks", "spruce_planks", "birch_planks", "jungle_planks", "acacia_planks",
+            "dark_oak_planks", "mangrove_planks", "cherry_planks", "pale_oak_planks",
+            "crimson_planks", "warped_planks"
     );
 
     private static final List<String> ORES = Arrays.asList(
-            "coal", "iron ingot", "gold ingot", "diamond", "emerald", "netherite ingot",
-            "raw iron", "raw gold", "raw copper", "lapis lazuli", "redstone", "quartz"
+            "coal", "iron_ingot", "gold_ingot", "diamond", "emerald", "netherite_ingot",
+            "raw_iron", "raw_gold", "raw_copper", "lapis_lazuli", "redstone", "quartz"
     );
 
     private static final List<String> REDSTONE = Arrays.asList(
-            "redstone", "repeater", "comparator", "piston", "sticky piston",
+            "redstone", "repeater", "comparator", "piston", "sticky_piston",
             "observer", "dropper", "dispenser", "hopper", "target", "tnt"
     );
 
@@ -34,7 +34,6 @@ public class ItemTagResolver {
         Set<String> resultSet = new LinkedHashSet<>();
         if (rawInput == null || rawInput.trim().isEmpty()) return new ArrayList<>();
 
-        // Split by commas, newlines, or semicolons
         String[] tokens = rawInput.split("[,;\\r\\n]+");
         for (String token : tokens) {
             String clean = token.trim().toLowerCase();
@@ -43,10 +42,12 @@ public class ItemTagResolver {
             if (clean.startsWith("#")) {
                 expandTag(clean, resultSet);
             } else {
-                // Normalize snake_case IDs to space-separated names (e.g. oak_log -> oak log)
-                String normalized = clean.replace("_", " ").trim();
-                if (!normalized.isEmpty()) {
-                    resultSet.add(normalized);
+                String canonicalId = clean.replace(" ", "_").trim();
+                if (canonicalId.startsWith("minecraft:")) {
+                    canonicalId = canonicalId.substring(10);
+                }
+                if (!canonicalId.isEmpty()) {
+                    resultSet.add(canonicalId);
                 }
             }
         }
@@ -80,7 +81,10 @@ public class ItemTagResolver {
                 resultSet.addAll(REDSTONE);
                 break;
             default:
-                String cleanTag = tag.substring(1).replace("_", " ").trim();
+                String cleanTag = tag.substring(1).toLowerCase().replace(" ", "_").trim();
+                if (cleanTag.startsWith("minecraft:")) {
+                    cleanTag = cleanTag.substring(10);
+                }
                 if (!cleanTag.isEmpty()) {
                     resultSet.add(cleanTag);
                 }

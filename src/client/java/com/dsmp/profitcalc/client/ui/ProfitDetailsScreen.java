@@ -1097,9 +1097,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout tableHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         tableHeader.padding(Insets.of(4)).surface(Surface.flat(0x80232936)).margins(Insets.vertical(4));
 
-        tableHeader.child(UIComponents.label(Component.literal("Source")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(55), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Item Name")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(170), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Price")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(80), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Source")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Item Registry ID")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(135), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Avg Top 10")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(80), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Sample")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
 
         modalCard.child(tableHeader);
 
@@ -1118,17 +1119,22 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
                 boolean isOrder = res.getSource().equalsIgnoreCase("ORDER");
                 LabelComponent srcLbl = UIComponents.label(Component.literal("[" + res.getSource() + "]"));
-                srcLbl.color(Color.ofRgb(isOrder ? 0x3B82F6 : 0xF59E0B)).sizing(Sizing.fixed(55), Sizing.content());
+                srcLbl.color(Color.ofRgb(isOrder ? 0x3B82F6 : 0xF59E0B)).sizing(Sizing.fixed(50), Sizing.content());
 
                 LabelComponent itemLbl = UIComponents.label(Component.literal(res.getItemName()));
-                itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(170), Sizing.content());
+                itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(135), Sizing.content());
 
-                LabelComponent priceLbl = UIComponents.label(Component.literal(res.getFormattedPrice()));
-                priceLbl.color(Color.ofRgb(res.getPrice() > 0 ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(80), Sizing.content());
+                String avgStr = res.getSampleSize() > 0 ? String.format("$%,.2f", res.getAvgTop10()) : "N/A";
+                LabelComponent priceLbl = UIComponents.label(Component.literal(avgStr));
+                priceLbl.color(Color.ofRgb(res.getSampleSize() > 0 ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(80), Sizing.content());
+
+                LabelComponent sampleLbl = UIComponents.label(Component.literal(res.getSampleSize() + "x"));
+                sampleLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content());
 
                 row.child(srcLbl);
                 row.child(itemLbl);
                 row.child(priceLbl);
+                row.child(sampleLbl);
 
                 listContainer.child(row);
                 idx++;

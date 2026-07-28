@@ -27,18 +27,7 @@ public class PriceExporter {
         File exportFile = FabricLoader.getInstance().getGameDir().resolve("donut_price_dump.txt").toFile();
 
         try (FileWriter writer = new FileWriter(exportFile)) {
-            writer.write("======================================================\n");
-            writer.write("DONUT SMP PRICE DUMP REPORT\n");
-            writer.write("Generated: " + DATE_FMT.format(new Date()) + "\n");
-            writer.write("Total Items Scanned: " + results.size() + "\n");
-            writer.write("======================================================\n\n");
-
-            for (DumpResult res : results) {
-                String priceStr = res.getPrice() > 0 ? CURRENCY_FMT.format(res.getPrice()) : res.getFormattedPrice();
-                writer.write(String.format("[%-5s] %-30s : %s\n", res.getSource(), res.getItemName(), priceStr));
-            }
-
-            writer.write("\n======================================================\n");
+            writer.write(generateTxtReport(results));
 
             LOGGER.info("[Price Dumper] Dumped TXT report to: {}", exportFile.getAbsolutePath());
             if (mc.player != null) {
@@ -76,22 +65,9 @@ public class PriceExporter {
 
     public static void copyTxtToClipboard(List<DumpResult> results) {
         Minecraft mc = Minecraft.getInstance();
-        StringBuilder sb = new StringBuilder();
-        sb.append("======================================================\n");
-        sb.append("DONUT SMP PRICE DUMP REPORT\n");
-        sb.append("Generated: ").append(DATE_FMT.format(new Date())).append("\n");
-        sb.append("Total Items Scanned: ").append(results.size()).append("\n");
-        sb.append("======================================================\n\n");
-
-        for (DumpResult res : results) {
-            String priceStr = res.getPrice() > 0 ? CURRENCY_FMT.format(res.getPrice()) : res.getFormattedPrice();
-            sb.append(String.format("[%-5s] %-30s : %s\n", res.getSource(), res.getItemName(), priceStr));
-        }
-
-        sb.append("\n======================================================\n");
-
+        String txt = generateTxtReport(results);
         if (mc.keyboardHandler != null) {
-            mc.keyboardHandler.setClipboard(sb.toString());
+            mc.keyboardHandler.setClipboard(txt);
         }
         if (mc.player != null) {
             mc.player.displayClientMessage(Component.literal("§a[Price Dumper] Copied TXT report to clipboard!"), false);
@@ -107,5 +83,39 @@ public class PriceExporter {
         if (mc.player != null) {
             mc.player.displayClientMessage(Component.literal("§a[Price Dumper] Copied JSON report to clipboard!"), false);
         }
+    }
+
+    private static String generateTxtReport(List<DumpResult> results) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("======================================================\n");
+        sb.append("DONUT SMP PRICE DUMP REPORT\n");
+        sb.append("Generated: ").append(DATE_FMT.format(new Date())).append("\n");
+        sb.append("Total Items Scanned: ").append(results.size()).append("\n");
+        sb.append("======================================================\n\n");
+
+        for (DumpResult res : results) {
+            sb.append(String.format("[%-5s] %s\n", res.getSource(), res.getItemName()));
+            if (res.getSampleSize() == 0) {
+                sb.append("  Sample Size : 0 listings (No valid matches)\n\n");
+                continue;
+            }
+
+            sb.append(String.format("  Sample Size : %d listings\n", res.getSampleSize()));
+            sb.append(String.format("  Avg Top 10  : %s\n", CURRENCY_FMT.format(res.getAvgTop10())));
+
+            sb.append("  Top 5 Prices: ");
+            List<Double> top5 = res.getTop5();
+            for (int i = 0; i < top5.size(); i++) {
+                sb.append(CURRENCY_FMT.format(top5.get(i)));
+                if (i < top5.size() - 1) sb.append(", ");
+            }
+            sb.append("\n");
+
+            sb.append(String.format("  Range       : Min %s - Max %s\n\n",
+                    CURRENCY_FMT.format(res.getLowest()), CURRENCY_FMT.format(res.getHighest())));
+        }
+
+        sb.append("======================================================\n");
+        return sb.toString();
     }
 }
