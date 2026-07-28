@@ -18,44 +18,87 @@ public class AutoFlipCalcHandler {
 
     private static final long INITIAL_COMMAND_DELAY_MS = 350;
     private static final long PAGE_TURN_DELAY_MS = 300;
-    private static final long TIMEOUT_LIMIT_MS = 10000;
+    private static final long TIMEOUT_LIMIT_MS = 12000;
+
+    public enum FlipMode {
+        BONE,
+        KELP
+    }
 
     private enum State {
         IDLE,
-        WAITING_FOR_CONTAINER,
-        SCANNING_PAGE,
-        FINISHING
+        SCANNING_BONE_MODE,
+        SCANNING_KELP_BONE_PHASE,
+        TRANSITIONING_TO_KELP,
+        SCANNING_KELP_PHASE
     }
 
     private static State currentState = State.IDLE;
+    public static FlipMode activeMode = FlipMode.BONE;
+
     private static double capturedBlockPrice = 0.0;
     private static double capturedBonePrice = 0.0;
+    private static double capturedKelpPrice = 0.0;
+
     private static int pagesScanned = 0;
     private static long lastActionTime = 0;
 
     public static double autoBonePrice = 0.0;
     public static double autoBlockPrice = 0.0;
+    public static double autoKelpPrice = 0.0;
 
     public static void start() {
+        start(FlipMode.BONE);
+    }
+
+    public static void start(FlipMode mode) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        currentState = State.WAITING_FOR_CONTAINER;
+        activeMode = mode;
         capturedBlockPrice = 0.0;
         capturedBonePrice = 0.0;
+        capturedKelpPrice = 0.0;
         pagesScanned = 0;
         lastActionTime = System.currentTimeMillis();
 
-        if (mc.player.connection != null) {
-            mc.player.connection.sendCommand("order bone");
+        if (mc.screen != null) {
+            mc.player.closeContainer();
         }
-        mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Running /order bone... Scanning prices!"), true);
+
+        if (mode == FlipMode.BONE) {
+            currentState = State.SCANNING_BONE_MODE;
+            if (mc.player.connection != null) {
+                mc.player.connection.sendCommand("order bone");
+            }
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Running /order bone... Scanning prices!"), true);
+        } else {
+            currentState = State.SCANNING_KELP_BONE_PHASE;
+            if (mc.player.connection != null) {
+                mc.player.connection.sendCommand("order bone");
+            }
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 1: Running /order bone for Kelp Flip..."), true);
+        }
     }
 
     public static void onTick(Minecraft mc) {
         if (currentState == State.IDLE || mc == null || mc.player == null) return;
 
-        // Timeout check (10s max)
+        // Handle Transitioning to /order kelp
+        if (currentState == State.TRANSITIONING_TO_KELP) {
+            if (System.currentTimeMillis() - lastActionTime >= INITIAL_COMMAND_DELAY_MS) {
+                currentState = State.SCANNING_KELP_PHASE;
+                pagesScanned = 0;
+                lastActionTime = System.currentTimeMillis();
+                if (mc.player.connection != null) {
+                    mc.player.connection.sendCommand("order kelp");
+                }
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 2: Running /order kelp for Kelp Flip..."), true);
+            }
+            return;
+        }
+
+        // Timeout check (12s max)
         if (System.currentTimeMillis() - lastActionTime > TIMEOUT_LIMIT_MS) {
             currentState = State.IDLE;
             mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§c[Auto Flip] Timed out waiting for /order response."), true);
@@ -64,16 +107,27 @@ public class AutoFlipCalcHandler {
 
         if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
             String title = containerScreen.getTitle() != null ? containerScreen.getTitle().getString().toLowerCase() : "";
-            if (!title.contains("orders") && !title.contains("bone")) return;
 
             long delayRequired = (pagesScanned == 0) ? INITIAL_COMMAND_DELAY_MS : PAGE_TURN_DELAY_MS;
             if (System.currentTimeMillis() - lastActionTime < delayRequired) return;
 
-            scanContainer(mc, containerScreen);
+            if (currentState == State.SCANNING_BONE_MODE) {
+                if (title.contains("orders") || title.contains("bone")) {
+                    scanBoneContainer(mc, containerScreen, false);
+                }
+            } else if (currentState == State.SCANNING_KELP_BONE_PHASE) {
+                if (title.contains("orders") || title.contains("bone")) {
+                    scanBoneContainer(mc, containerScreen, true);
+                }
+            } else if (currentState == State.SCANNING_KELP_PHASE) {
+                if (title.contains("orders") || title.contains("kelp")) {
+                    scanKelpContainer(mc, containerScreen);
+                }
+            }
         }
     }
 
-    private static void scanContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen) {
+    private static void scanBoneContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen, boolean isKelpMode) {
         if (containerScreen.getMenu() == null) return;
         List<Slot> slots = containerScreen.getMenu().slots;
         if (slots.size() < 54) return;
@@ -98,13 +152,18 @@ public class AutoFlipCalcHandler {
                 if (price > 0) {
                     capturedBonePrice = price;
                     LOGGER.info("[Auto Flip] Captured Single Bone Price from slot #{}: ${}/ea", i, capturedBonePrice);
-                    finishAutoScan(mc);
+
+                    if (isKelpMode) {
+                        advanceToKelpPhase(mc);
+                    } else {
+                        finishAutoScan(mc);
+                    }
                     return;
                 }
             }
         }
 
-        // 3. If Bone price not found on this page, click Slot 53 ("Next Page" arrow)
+        // 3. Next Page
         if (pagesScanned < 5) {
             Slot nextSlot = slots.get(53);
             if (nextSlot != null && !nextSlot.getItem().isEmpty()) {
@@ -112,6 +171,60 @@ public class AutoFlipCalcHandler {
                 lastActionTime = System.currentTimeMillis();
                 mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
                 LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53). Page count: {}", pagesScanned);
+                return;
+            }
+        }
+
+        if (isKelpMode) {
+            advanceToKelpPhase(mc);
+        } else {
+            finishAutoScan(mc);
+        }
+    }
+
+    private static void advanceToKelpPhase(Minecraft mc) {
+        if (mc.player != null) {
+            mc.player.closeContainer();
+        }
+        currentState = State.TRANSITIONING_TO_KELP;
+        lastActionTime = System.currentTimeMillis();
+    }
+
+    private static void scanKelpContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen) {
+        if (containerScreen.getMenu() == null) return;
+        List<Slot> slots = containerScreen.getMenu().slots;
+        if (slots.size() < 54) return;
+
+        // Scan slots 0..44 for highest Kelp / Dried Kelp Block order
+        double highestKelpPrice = 0.0;
+        for (int i = 0; i < Math.min(45, slots.size()); i++) {
+            ItemStack stack = slots.get(i).getItem();
+            if (stack.isEmpty()) continue;
+            String itemName = stack.getHoverName().getString().trim().toLowerCase();
+
+            if (itemName.contains("kelp")) {
+                double price = parsePriceFromStack(stack);
+                if (price > highestKelpPrice) {
+                    highestKelpPrice = price;
+                }
+            }
+        }
+
+        if (highestKelpPrice > 0) {
+            capturedKelpPrice = highestKelpPrice;
+            LOGGER.info("[Auto Flip] Captured Kelp Price: ${}/ea", capturedKelpPrice);
+            finishAutoScan(mc);
+            return;
+        }
+
+        // Next Page
+        if (pagesScanned < 5) {
+            Slot nextSlot = slots.get(53);
+            if (nextSlot != null && !nextSlot.getItem().isEmpty()) {
+                pagesScanned++;
+                lastActionTime = System.currentTimeMillis();
+                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
+                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /order kelp. Page count: {}", pagesScanned);
                 return;
             }
         }
@@ -124,14 +237,23 @@ public class AutoFlipCalcHandler {
 
         if (capturedBonePrice > 0) autoBonePrice = capturedBonePrice;
         if (capturedBlockPrice > 0) autoBlockPrice = capturedBlockPrice;
+        if (capturedKelpPrice > 0) autoKelpPrice = capturedKelpPrice;
 
         if (mc.player != null) {
             mc.player.closeContainer();
-            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    String.format("§a[Auto Flip] Success! Bone: $%.2f | Block: $%.2f", autoBonePrice, autoBlockPrice)), true);
+            if (activeMode == FlipMode.BONE) {
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        String.format("§a[Auto Flip] Success! Bone: $%.2f | Block: $%.2f", autoBonePrice, autoBlockPrice)), true);
+            } else {
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        String.format("§a[Auto Flip] Success! Bone: $%.2f | Kelp: $%.2f", autoBonePrice, autoKelpPrice)), true);
+            }
         }
 
-        mc.execute(() -> mc.setScreen(new ProfitDetailsScreen()));
+        mc.execute(() -> {
+            ProfitDetailsScreen.selectedTab = (activeMode == FlipMode.KELP) ? 1 : 0;
+            mc.setScreen(new ProfitDetailsScreen());
+        });
     }
 
     private static double parsePriceFromStack(ItemStack stack) {

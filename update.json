@@ -1,5 +1,5 @@
 {
-  "version": "1.0.6",
-  "changelog": "Filter public server broadcast sales from other players (only track 'You' sales)",
-  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.0.6/donut-smp-profit-calc-1.0.6.jar"
+  "version": "1.0.7",
+  "changelog": "Added Bone Flip and Kelp Flip calculator tabs with Auto Check GUI buttons and automated multi-command order price scanner",
+  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.0.7/donut-smp-profit-calc-1.0.7.jar"
 }
