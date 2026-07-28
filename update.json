@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
-  "changelog": "Staged 4x9 GUI manual item count confirmation via server chat to eliminate double-counting and failed order bugs",
-  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.0.5/donut-smp-profit-calc-1.0.5.jar"
+  "version": "1.0.6",
+  "changelog": "Filter public server broadcast sales from other players (only track 'You' sales)",
+  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.0.6/donut-smp-profit-calc-1.0.6.jar"
 }

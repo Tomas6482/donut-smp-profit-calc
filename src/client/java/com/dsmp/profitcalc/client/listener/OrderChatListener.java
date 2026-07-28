@@ -15,13 +15,14 @@ import java.util.regex.Pattern;
 public class OrderChatListener {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/ChatListener");
 
+    // Must start with "You" to ignore public broadcast sales from other players (e.g. "VELVETALLLL sold ...")
     private static final Pattern SELL_CHAT_PATTERN_1 = Pattern.compile(
-            "(?:sold|delivered)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+(?:and\\s+)?(?:for|received)\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)",
+            "^(?:you\\s+(?:have\\s+)?)?(?:sold|delivered)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+(?:and\\s+)?(?:for|received)\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)",
             Pattern.CASE_INSENSITIVE
     );
 
     private static final Pattern SELL_CHAT_PATTERN_2 = Pattern.compile(
-            "received\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)\\s+for\\s+(?:delivering|selling)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+)",
+            "^(?:you\\s+(?:have\\s+)?)?received\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)\\s+for\\s+(?:delivering|selling)\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+)",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -40,6 +41,15 @@ public class OrderChatListener {
         String text = stripColorCodes(rawText);
 
         if (!text.toLowerCase().contains("order") && !text.toLowerCase().contains("sold") && !text.toLowerCase().contains("delivered") && !text.toLowerCase().contains("received")) {
+            return;
+        }
+
+        // Filter out public broadcast sales from OTHER players (must start with "You" or contain "you delivered/sold/received")
+        String lowerText = text.toLowerCase().trim();
+        if (!lowerText.startsWith("you ") && !lowerText.contains("you delivered") && !lowerText.contains("you sold") && !lowerText.contains("you received") && !lowerText.contains("you ordered") && !lowerText.contains("created buy order")) {
+            if (ProfitConfig.getInstance().isVerboseLogging()) {
+                LOGGER.info("[DONUT PROFIT/CHAT] Ignored public broadcast message from another player: '{}'", text);
+            }
             return;
         }
 
