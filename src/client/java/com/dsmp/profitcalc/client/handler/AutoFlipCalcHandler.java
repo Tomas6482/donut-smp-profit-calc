@@ -1,5 +1,6 @@
 package com.dsmp.profitcalc.client.handler;
 
+import com.dsmp.profitcalc.client.config.ProfitConfig;
 import com.dsmp.profitcalc.client.ui.ProfitDetailsScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -9,16 +10,18 @@ import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.text.DecimalFormat;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class AutoFlipCalcHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/AutoFlip");
+    private static final DecimalFormat DEC_FMT = new DecimalFormat("#,##0.##");
 
     private static final long INITIAL_COMMAND_DELAY_MS = 350;
     private static final long PAGE_TURN_DELAY_MS = 300;
-    private static final long TIMEOUT_LIMIT_MS = 12000;
+    private static final long TIMEOUT_LIMIT_MS = 15000;
 
     public enum FlipMode {
         BONE,
@@ -30,7 +33,9 @@ public class AutoFlipCalcHandler {
         SCANNING_BONE_MODE,
         SCANNING_KELP_BONE_PHASE,
         TRANSITIONING_TO_KELP,
-        SCANNING_KELP_PHASE
+        SCANNING_KELP_PHASE,
+        TRANSITIONING_TO_CHARCOAL,
+        SCANNING_CHARCOAL_PHASE
     }
 
     private static State currentState = State.IDLE;
@@ -38,14 +43,18 @@ public class AutoFlipCalcHandler {
 
     private static double capturedBlockPrice = 0.0;
     private static double capturedBonePrice = 0.0;
-    private static double capturedKelpPrice = 0.0;
+    private static double capturedRawKelpPrice = 0.0;
+    private static double capturedDriedKelpPrice = 0.0;
+    private static double capturedCharcoalPrice = 0.0;
 
     private static int pagesScanned = 0;
     private static long lastActionTime = 0;
 
     public static double autoBonePrice = 0.0;
     public static double autoBlockPrice = 0.0;
-    public static double autoKelpPrice = 0.0;
+    public static double autoRawKelpPrice = 0.0;
+    public static double autoDriedKelpPrice = 0.0;
+    public static double autoCharcoalPrice = 0.0;
 
     public static void start() {
         start(FlipMode.BONE);
@@ -58,7 +67,9 @@ public class AutoFlipCalcHandler {
         activeMode = mode;
         capturedBlockPrice = 0.0;
         capturedBonePrice = 0.0;
-        capturedKelpPrice = 0.0;
+        capturedRawKelpPrice = 0.0;
+        capturedDriedKelpPrice = 0.0;
+        capturedCharcoalPrice = 0.0;
         pagesScanned = 0;
         lastActionTime = System.currentTimeMillis();
 
@@ -77,7 +88,7 @@ public class AutoFlipCalcHandler {
             if (mc.player.connection != null) {
                 mc.player.connection.sendCommand("order bone");
             }
-            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 1: Running /order bone for Kelp Flip..."), true);
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 1/3: Running /order bone for Kelp Flip..."), true);
         }
     }
 
@@ -93,12 +104,26 @@ public class AutoFlipCalcHandler {
                 if (mc.player.connection != null) {
                     mc.player.connection.sendCommand("order kelp");
                 }
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 2: Running /order kelp for Kelp Flip..."), true);
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 2/3: Running /order kelp for Raw & Dried Kelp..."), true);
             }
             return;
         }
 
-        // Timeout check (12s max)
+        // Handle Transitioning to /order charcoal
+        if (currentState == State.TRANSITIONING_TO_CHARCOAL) {
+            if (System.currentTimeMillis() - lastActionTime >= INITIAL_COMMAND_DELAY_MS) {
+                currentState = State.SCANNING_CHARCOAL_PHASE;
+                pagesScanned = 0;
+                lastActionTime = System.currentTimeMillis();
+                if (mc.player.connection != null) {
+                    mc.player.connection.sendCommand("order charcoal");
+                }
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 3/3: Running /order charcoal for Smelting cost..."), true);
+            }
+            return;
+        }
+
+        // Timeout check (15s max)
         if (System.currentTimeMillis() - lastActionTime > TIMEOUT_LIMIT_MS) {
             currentState = State.IDLE;
             mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§c[Auto Flip] Timed out waiting for /order response."), true);
@@ -122,6 +147,10 @@ public class AutoFlipCalcHandler {
             } else if (currentState == State.SCANNING_KELP_PHASE) {
                 if (title.contains("orders") || title.contains("kelp")) {
                     scanKelpContainer(mc, containerScreen);
+                }
+            } else if (currentState == State.SCANNING_CHARCOAL_PHASE) {
+                if (title.contains("orders") || title.contains("charcoal")) {
+                    scanCharcoalContainer(mc, containerScreen);
                 }
             }
         }
@@ -195,25 +224,28 @@ public class AutoFlipCalcHandler {
         List<Slot> slots = containerScreen.getMenu().slots;
         if (slots.size() < 54) return;
 
-        // Scan slots 0..44 for highest Kelp / Dried Kelp Block order
-        double highestKelpPrice = 0.0;
+        // Scan slots 0..44 for Raw Kelp vs Dried Kelp Block
         for (int i = 0; i < Math.min(45, slots.size()); i++) {
             ItemStack stack = slots.get(i).getItem();
             if (stack.isEmpty()) continue;
             String itemName = stack.getHoverName().getString().trim().toLowerCase();
 
-            if (itemName.contains("kelp")) {
+            if (itemName.contains("dried kelp block") || (itemName.contains("dried") && itemName.contains("kelp"))) {
                 double price = parsePriceFromStack(stack);
-                if (price > highestKelpPrice) {
-                    highestKelpPrice = price;
+                if (price > capturedDriedKelpPrice) {
+                    capturedDriedKelpPrice = price;
+                }
+            } else if (itemName.contains("kelp")) {
+                double price = parsePriceFromStack(stack);
+                if (price > capturedRawKelpPrice) {
+                    capturedRawKelpPrice = price;
                 }
             }
         }
 
-        if (highestKelpPrice > 0) {
-            capturedKelpPrice = highestKelpPrice;
-            LOGGER.info("[Auto Flip] Captured Kelp Price: ${}/ea", capturedKelpPrice);
-            finishAutoScan(mc);
+        // If both or either captured, advance to Charcoal
+        if (capturedDriedKelpPrice > 0 || capturedRawKelpPrice > 0 || pagesScanned >= 3) {
+            advanceToCharcoalPhase(mc);
             return;
         }
 
@@ -229,15 +261,75 @@ public class AutoFlipCalcHandler {
             }
         }
 
+        advanceToCharcoalPhase(mc);
+    }
+
+    private static void advanceToCharcoalPhase(Minecraft mc) {
+        if (mc.player != null) {
+            mc.player.closeContainer();
+        }
+        currentState = State.TRANSITIONING_TO_CHARCOAL;
+        lastActionTime = System.currentTimeMillis();
+    }
+
+    private static void scanCharcoalContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen) {
+        if (containerScreen.getMenu() == null) return;
+        List<Slot> slots = containerScreen.getMenu().slots;
+        if (slots.size() < 54) return;
+
+        for (int i = 0; i < Math.min(45, slots.size()); i++) {
+            ItemStack stack = slots.get(i).getItem();
+            if (stack.isEmpty()) continue;
+            String itemName = stack.getHoverName().getString().trim().toLowerCase();
+
+            if (itemName.contains("charcoal") || itemName.equalsIgnoreCase("charcoal")) {
+                double price = parsePriceFromStack(stack);
+                if (price > 0) {
+                    capturedCharcoalPrice = price;
+                    finishAutoScan(mc);
+                    return;
+                }
+            }
+        }
+
+        // Next Page
+        if (pagesScanned < 3) {
+            Slot nextSlot = slots.get(53);
+            if (nextSlot != null && !nextSlot.getItem().isEmpty()) {
+                pagesScanned++;
+                lastActionTime = System.currentTimeMillis();
+                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
+                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /order charcoal. Page count: {}", pagesScanned);
+                return;
+            }
+        }
+
         finishAutoScan(mc);
     }
 
     private static void finishAutoScan(Minecraft mc) {
         currentState = State.IDLE;
 
-        if (capturedBonePrice > 0) autoBonePrice = capturedBonePrice;
-        if (capturedBlockPrice > 0) autoBlockPrice = capturedBlockPrice;
-        if (capturedKelpPrice > 0) autoKelpPrice = capturedKelpPrice;
+        if (capturedBonePrice > 0) {
+            autoBonePrice = capturedBonePrice;
+            ProfitConfig.getInstance().setSavedBonePrice(DEC_FMT.format(autoBonePrice));
+        }
+        if (capturedBlockPrice > 0) {
+            autoBlockPrice = capturedBlockPrice;
+            ProfitConfig.getInstance().setSavedBlockPrice(DEC_FMT.format(autoBlockPrice));
+        }
+        if (capturedRawKelpPrice > 0) {
+            autoRawKelpPrice = capturedRawKelpPrice;
+            ProfitConfig.getInstance().setSavedRawKelpPrice(DEC_FMT.format(autoRawKelpPrice));
+        }
+        if (capturedDriedKelpPrice > 0) {
+            autoDriedKelpPrice = capturedDriedKelpPrice;
+            ProfitConfig.getInstance().setSavedDriedKelpPrice(DEC_FMT.format(autoDriedKelpPrice));
+        }
+        if (capturedCharcoalPrice > 0) {
+            autoCharcoalPrice = capturedCharcoalPrice;
+            ProfitConfig.getInstance().setSavedCharcoalPrice(DEC_FMT.format(autoCharcoalPrice));
+        }
 
         if (mc.player != null) {
             mc.player.closeContainer();
@@ -246,12 +338,14 @@ public class AutoFlipCalcHandler {
                         String.format("§a[Auto Flip] Success! Bone: $%.2f | Block: $%.2f", autoBonePrice, autoBlockPrice)), true);
             } else {
                 mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                        String.format("§a[Auto Flip] Success! Bone: $%.2f | Kelp: $%.2f", autoBonePrice, autoKelpPrice)), true);
+                        String.format("§a[Auto Flip] Success! Bone: $%.2f | Raw Kelp: $%.2f | Dried Kelp: $%.2f | Charcoal: $%.2f",
+                                autoBonePrice, autoRawKelpPrice, autoDriedKelpPrice, autoCharcoalPrice)), true);
             }
         }
 
         mc.execute(() -> {
             ProfitDetailsScreen.selectedTab = (activeMode == FlipMode.KELP) ? 1 : 0;
+            ProfitConfig.getInstance().setSavedSelectedTab(ProfitDetailsScreen.selectedTab);
             mc.setScreen(new ProfitDetailsScreen());
         });
     }

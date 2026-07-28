@@ -35,6 +35,15 @@ public class ProfitConfig {
     private boolean verboseLogging = false;
     private int themeColorHex = 0xD0101216; // Default Dark Glass
 
+    // Saved Calculator Inputs & Active Tab State
+    private int savedSelectedTab = 0;
+    private String savedBonePrice = "1";
+    private String savedBlockPrice = "400";
+    private String savedRawKelpPrice = "160";
+    private String savedDriedKelpPrice = "200";
+    private String savedCharcoalPrice = "50";
+    private String savedBonesQty = "100k";
+
     private ProfitConfig() {}
 
     public static ProfitConfig getInstance() {
@@ -149,6 +158,70 @@ public class ProfitConfig {
         save();
     }
 
+    // Calculator Persistence Getters & Setters
+    public int getSavedSelectedTab() {
+        return savedSelectedTab;
+    }
+
+    public void setSavedSelectedTab(int tab) {
+        this.savedSelectedTab = tab;
+        save();
+    }
+
+    public String getSavedBonePrice() {
+        return savedBonePrice != null ? savedBonePrice : "1";
+    }
+
+    public void setSavedBonePrice(String val) {
+        this.savedBonePrice = val;
+        save();
+    }
+
+    public String getSavedBlockPrice() {
+        return savedBlockPrice != null ? savedBlockPrice : "400";
+    }
+
+    public void setSavedBlockPrice(String val) {
+        this.savedBlockPrice = val;
+        save();
+    }
+
+    public String getSavedRawKelpPrice() {
+        return savedRawKelpPrice != null ? savedRawKelpPrice : "160";
+    }
+
+    public void setSavedRawKelpPrice(String val) {
+        this.savedRawKelpPrice = val;
+        save();
+    }
+
+    public String getSavedDriedKelpPrice() {
+        return savedDriedKelpPrice != null ? savedDriedKelpPrice : "200";
+    }
+
+    public void setSavedDriedKelpPrice(String val) {
+        this.savedDriedKelpPrice = val;
+        save();
+    }
+
+    public String getSavedCharcoalPrice() {
+        return savedCharcoalPrice != null ? savedCharcoalPrice : "50";
+    }
+
+    public void setSavedCharcoalPrice(String val) {
+        this.savedCharcoalPrice = val;
+        save();
+    }
+
+    public String getSavedBonesQty() {
+        return savedBonesQty != null ? savedBonesQty : "100k";
+    }
+
+    public void setSavedBonesQty(String val) {
+        this.savedBonesQty = val;
+        save();
+    }
+
     public static void load() {
         File file = CONFIG_PATH.toFile();
         if (!file.exists()) {
@@ -171,6 +244,14 @@ public class ProfitConfig {
                 INSTANCE.showStatusHud = loaded.showStatusHud;
                 INSTANCE.verboseLogging = loaded.verboseLogging;
                 if (loaded.themeColorHex != 0) INSTANCE.themeColorHex = loaded.themeColorHex;
+
+                INSTANCE.savedSelectedTab = loaded.savedSelectedTab;
+                if (loaded.savedBonePrice != null) INSTANCE.savedBonePrice = loaded.savedBonePrice;
+                if (loaded.savedBlockPrice != null) INSTANCE.savedBlockPrice = loaded.savedBlockPrice;
+                if (loaded.savedRawKelpPrice != null) INSTANCE.savedRawKelpPrice = loaded.savedRawKelpPrice;
+                if (loaded.savedDriedKelpPrice != null) INSTANCE.savedDriedKelpPrice = loaded.savedDriedKelpPrice;
+                if (loaded.savedCharcoalPrice != null) INSTANCE.savedCharcoalPrice = loaded.savedCharcoalPrice;
+                if (loaded.savedBonesQty != null) INSTANCE.savedBonesQty = loaded.savedBonesQty;
             }
         } catch (Exception e) {
             LOGGER.error("Failed to load config file", e);

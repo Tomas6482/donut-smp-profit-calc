@@ -36,7 +36,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private static final NumberFormat CURRENCY_FORMAT = NumberFormat.getCurrencyInstance(Locale.US);
     private static final DecimalFormat DEC_FMT = new DecimalFormat("#,##0.##");
 
-    public static int selectedTab = 0; // 0 = Bone Flip, 1 = Kelp Flip
+    public static int selectedTab = -1; // -1 means load from config
 
     private FlowLayout mainCard;
     private FlowLayout leftPanel;
@@ -52,7 +52,9 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private ButtonComponent tabKelpBtn;
 
     private TextBoxComponent bonePriceInput;
-    private TextBoxComponent targetPriceInput; // Block price (Bone tab) or Kelp price (Kelp tab)
+    private TextBoxComponent targetPriceInput; // Block price (Bone tab) or Raw Kelp price (Kelp tab)
+    private TextBoxComponent driedKelpPriceInput; // Kelp tab
+    private TextBoxComponent charcoalPriceInput; // Kelp tab
     private TextBoxComponent qtyInput;
 
     private LabelComponent calcCostLabel;
@@ -60,6 +62,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private LabelComponent calcRevenueBreakevenLabel;
     private LabelComponent calcProfitLabel;
     private LabelComponent calcPctLabel;
+    private LabelComponent calcSmeltedProfitLabel;
+    private LabelComponent calcSmeltedPctLabel;
 
     @Override
     protected @NotNull OwoUIAdapter<FlowLayout> createAdapter() {
@@ -71,6 +75,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         rootComponent.surface(Surface.blur(8, 12))
                 .horizontalAlignment(HorizontalAlignment.CENTER)
                 .verticalAlignment(VerticalAlignment.CENTER);
+
+        if (selectedTab < 0) {
+            selectedTab = ProfitConfig.getInstance().getSavedSelectedTab();
+        }
 
         int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
 
@@ -151,7 +159,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         // --- LEFT PANEL: CALCULATOR PANEL WITH TABS ---
         leftPanel = UIContainers.verticalFlow(Sizing.fill(32), Sizing.fill(100));
         leftPanel.surface(Surface.flat(0x9015181F).and(Surface.outline(0xFF2A313D)))
-                .padding(Insets.of(10))
+                .padding(Insets.of(8))
                 .margins(Insets.right(8));
 
         rebuildLeftPanel();
@@ -194,78 +202,125 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         if (leftPanel == null) return;
         leftPanel.clearChildren();
 
+        ProfitConfig config = ProfitConfig.getInstance();
+
         // 1. Tab Bar
         FlowLayout tabBar = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-        tabBar.margins(Insets.bottom(8));
+        tabBar.margins(Insets.bottom(6));
 
         tabBoneBtn = UIComponents.button(Component.literal("🦴 Bone Flip"), btn -> {
             selectedTab = 0;
+            config.setSavedSelectedTab(0);
             rebuildLeftPanel();
             updateCalc();
         });
-        tabBoneBtn.sizing(Sizing.fill(48), Sizing.fixed(20));
+        tabBoneBtn.sizing(Sizing.fill(48), Sizing.fixed(18));
 
         tabKelpBtn = UIComponents.button(Component.literal("🌿 Kelp Flip"), btn -> {
             selectedTab = 1;
+            config.setSavedSelectedTab(1);
             rebuildLeftPanel();
             updateCalc();
         });
-        tabKelpBtn.sizing(Sizing.fill(48), Sizing.fixed(20));
+        tabKelpBtn.sizing(Sizing.fill(48), Sizing.fixed(18));
         tabKelpBtn.margins(Insets.left(4));
 
         tabBar.child(tabBoneBtn);
         tabBar.child(tabKelpBtn);
         leftPanel.child(tabBar);
 
-        // 2. Input Fields
+        // 2. Dynamic Input Fields
         if (selectedTab == 0) {
             // --- BONE FLIP ---
             leftPanel.child(UIComponents.label(Component.literal("Bone Price ($/bone):")).color(Color.ofRgb(0x9CA3AF)));
             bonePriceInput = UIComponents.textBox(Sizing.fill(100));
             bonePriceInput.setMaxLength(16);
-            String initialBone = AutoFlipCalcHandler.autoBonePrice > 0 ? DEC_FMT.format(AutoFlipCalcHandler.autoBonePrice) : "1";
-            bonePriceInput.text(initialBone);
-            bonePriceInput.onChanged().subscribe(s -> updateCalc());
-            bonePriceInput.margins(Insets.bottom(4));
+            bonePriceInput.text(config.getSavedBonePrice());
+            bonePriceInput.onChanged().subscribe(s -> {
+                config.setSavedBonePrice(s);
+                updateCalc();
+            });
+            bonePriceInput.margins(Insets.bottom(2));
             leftPanel.child(bonePriceInput);
 
             leftPanel.child(UIComponents.label(Component.literal("Block Price ($/block):")).color(Color.ofRgb(0x9CA3AF)));
             targetPriceInput = UIComponents.textBox(Sizing.fill(100));
             targetPriceInput.setMaxLength(16);
-            String initialBlock = AutoFlipCalcHandler.autoBlockPrice > 0 ? DEC_FMT.format(AutoFlipCalcHandler.autoBlockPrice) : "400";
-            targetPriceInput.text(initialBlock);
-            targetPriceInput.onChanged().subscribe(s -> updateCalc());
-            targetPriceInput.margins(Insets.bottom(4));
+            targetPriceInput.text(config.getSavedBlockPrice());
+            targetPriceInput.onChanged().subscribe(s -> {
+                config.setSavedBlockPrice(s);
+                updateCalc();
+            });
+            targetPriceInput.margins(Insets.bottom(2));
             leftPanel.child(targetPriceInput);
+
+            leftPanel.child(UIComponents.label(Component.literal("Bones Qty:")).color(Color.ofRgb(0x9CA3AF)));
+            qtyInput = UIComponents.textBox(Sizing.fill(100));
+            qtyInput.setMaxLength(16);
+            qtyInput.text(config.getSavedBonesQty());
+            qtyInput.onChanged().subscribe(s -> {
+                config.setSavedBonesQty(s);
+                updateCalc();
+            });
+            qtyInput.margins(Insets.bottom(4));
+            leftPanel.child(qtyInput);
         } else {
             // --- KELP FLIP ---
             leftPanel.child(UIComponents.label(Component.literal("Bone Price ($/bone):")).color(Color.ofRgb(0x9CA3AF)));
             bonePriceInput = UIComponents.textBox(Sizing.fill(100));
             bonePriceInput.setMaxLength(16);
-            String initialBone = AutoFlipCalcHandler.autoBonePrice > 0 ? DEC_FMT.format(AutoFlipCalcHandler.autoBonePrice) : "1";
-            bonePriceInput.text(initialBone);
-            bonePriceInput.onChanged().subscribe(s -> updateCalc());
-            bonePriceInput.margins(Insets.bottom(4));
+            bonePriceInput.text(config.getSavedBonePrice());
+            bonePriceInput.onChanged().subscribe(s -> {
+                config.setSavedBonePrice(s);
+                updateCalc();
+            });
+            bonePriceInput.margins(Insets.bottom(2));
             leftPanel.child(bonePriceInput);
 
-            leftPanel.child(UIComponents.label(Component.literal("Kelp Price ($/kelp block):")).color(Color.ofRgb(0x9CA3AF)));
+            leftPanel.child(UIComponents.label(Component.literal("Raw Kelp Price ($/bl):")).color(Color.ofRgb(0x9CA3AF)));
             targetPriceInput = UIComponents.textBox(Sizing.fill(100));
             targetPriceInput.setMaxLength(16);
-            String initialKelp = AutoFlipCalcHandler.autoKelpPrice > 0 ? DEC_FMT.format(AutoFlipCalcHandler.autoKelpPrice) : "160";
-            targetPriceInput.text(initialKelp);
-            targetPriceInput.onChanged().subscribe(s -> updateCalc());
-            targetPriceInput.margins(Insets.bottom(4));
+            targetPriceInput.text(config.getSavedRawKelpPrice());
+            targetPriceInput.onChanged().subscribe(s -> {
+                config.setSavedRawKelpPrice(s);
+                updateCalc();
+            });
+            targetPriceInput.margins(Insets.bottom(2));
             leftPanel.child(targetPriceInput);
-        }
 
-        // Qty Input
-        leftPanel.child(UIComponents.label(Component.literal("Bones Qty:")).color(Color.ofRgb(0x9CA3AF)));
-        qtyInput = UIComponents.textBox(Sizing.fill(100));
-        qtyInput.setMaxLength(16);
-        qtyInput.text("100k");
-        qtyInput.onChanged().subscribe(s -> updateCalc());
-        qtyInput.margins(Insets.bottom(6));
-        leftPanel.child(qtyInput);
+            leftPanel.child(UIComponents.label(Component.literal("Dried Kelp Price ($/bl):")).color(Color.ofRgb(0x9CA3AF)));
+            driedKelpPriceInput = UIComponents.textBox(Sizing.fill(100));
+            driedKelpPriceInput.setMaxLength(16);
+            driedKelpPriceInput.text(config.getSavedDriedKelpPrice());
+            driedKelpPriceInput.onChanged().subscribe(s -> {
+                config.setSavedDriedKelpPrice(s);
+                updateCalc();
+            });
+            driedKelpPriceInput.margins(Insets.bottom(2));
+            leftPanel.child(driedKelpPriceInput);
+
+            leftPanel.child(UIComponents.label(Component.literal("Charcoal Price ($/ea):")).color(Color.ofRgb(0x9CA3AF)));
+            charcoalPriceInput = UIComponents.textBox(Sizing.fill(100));
+            charcoalPriceInput.setMaxLength(16);
+            charcoalPriceInput.text(config.getSavedCharcoalPrice());
+            charcoalPriceInput.onChanged().subscribe(s -> {
+                config.setSavedCharcoalPrice(s);
+                updateCalc();
+            });
+            charcoalPriceInput.margins(Insets.bottom(2));
+            leftPanel.child(charcoalPriceInput);
+
+            leftPanel.child(UIComponents.label(Component.literal("Bones Qty:")).color(Color.ofRgb(0x9CA3AF)));
+            qtyInput = UIComponents.textBox(Sizing.fill(100));
+            qtyInput.setMaxLength(16);
+            qtyInput.text(config.getSavedBonesQty());
+            qtyInput.onChanged().subscribe(s -> {
+                config.setSavedBonesQty(s);
+                updateCalc();
+            });
+            qtyInput.margins(Insets.bottom(4));
+            leftPanel.child(qtyInput);
+        }
 
         // Auto Check Button
         ButtonComponent autoCheckBtn = UIComponents.button(Component.literal("⚡ Auto Check Prices"), btn -> {
@@ -275,14 +330,14 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 AutoFlipCalcHandler.start(FlipMode.KELP);
             }
         });
-        autoCheckBtn.sizing(Sizing.fill(100), Sizing.fixed(20));
-        autoCheckBtn.margins(Insets.bottom(8));
+        autoCheckBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
+        autoCheckBtn.margins(Insets.bottom(4));
         leftPanel.child(autoCheckBtn);
 
         // Results Box
         FlowLayout calcResultsBox = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
         calcResultsBox.surface(Surface.flat(0x600C0D0B).and(Surface.outline(0xFF333B48)))
-                .padding(Insets.of(8));
+                .padding(Insets.of(6));
 
         calcCostLabel = UIComponents.label(Component.literal("Cost: —")).color(Color.ofRgb(0xD1D5DB));
         calcOutputLabel = UIComponents.label(Component.literal("Output: —")).color(Color.ofRgb(0xD1D5DB));
@@ -293,9 +348,17 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         calcResultsBox.child(calcCostLabel);
         calcResultsBox.child(calcOutputLabel);
         calcResultsBox.child(calcRevenueBreakevenLabel);
-        calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+        calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
         calcResultsBox.child(calcProfitLabel);
         calcResultsBox.child(calcPctLabel);
+
+        if (selectedTab == 1) {
+            calcSmeltedProfitLabel = UIComponents.label(Component.literal("Smelted Profit: $0")).color(Color.ofRgb(0x3B82F6));
+            calcSmeltedPctLabel = UIComponents.label(Component.literal("Smelted ROI%: 0.0%")).color(Color.ofRgb(0x3B82F6));
+            calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
+            calcResultsBox.child(calcSmeltedProfitLabel);
+            calcResultsBox.child(calcSmeltedPctLabel);
+        }
 
         leftPanel.child(calcResultsBox);
     }
@@ -311,7 +374,6 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             if (selectedTab == 0) {
                 // --- BONE FLIP ---
-                // 3 bones = 1 block
                 double blocksCraft = qtyBones / 3.0;
                 double revenue = blocksCraft * targetPrice;
                 double profit = revenue - cost;
@@ -331,28 +393,47 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
             } else {
                 // --- KELP FLIP ---
-                // Bone_meal = Bones * 3
-                // Kelp = Bone_meal * 1 = Bones * 3
-                // Revenue = Kelp * Kelp_price
-                // Cost = Bones * Bone_price
-                // Profit = Revenue - Cost
-                // ROI% = (Profit / Cost) * 100
+                double rawKelpPrice = targetPrice;
+                double driedKelpPrice = driedKelpPriceInput != null ? parseDouble(driedKelpPriceInput.getValue(), 0.0) : 0.0;
+                double charcoalPrice = charcoalPriceInput != null ? parseDouble(charcoalPriceInput.getValue(), 0.0) : 0.0;
+
                 double kelpBlocks = qtyBones * 3.0; // 1 bone = 3 bonemeal = 3 kelp blocks
-                double revenue = kelpBlocks * targetPrice;
-                double profit = revenue - cost;
-                double roiPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
 
-                calcCostLabel.text(Component.literal("Cost: $" + DEC_FMT.format(cost)));
+                // 1. Unsmelted (Raw Kelp)
+                double revenueRaw = kelpBlocks * rawKelpPrice;
+                double profitRaw = revenueRaw - cost;
+                double roiRawPct = cost > 0 ? (profitRaw / cost) * 100.0 : 0.0;
+
+                // 2. Smelted (Dried Kelp Block + Charcoal)
+                // 1 Dried Kelp Block = 9 Dried Kelp items. 8 items per charcoal => 9/8 = 1.125 charcoal per block.
+                double charcoalNeeded = kelpBlocks * 1.125;
+                double charcoalCost = charcoalNeeded * charcoalPrice;
+                double totalSmeltedCost = cost + charcoalCost;
+                double revenueDried = kelpBlocks * driedKelpPrice;
+                double profitDried = revenueDried - totalSmeltedCost;
+                double roiDriedPct = totalSmeltedCost > 0 ? (profitDried / totalSmeltedCost) * 100.0 : 0.0;
+
+                calcCostLabel.text(Component.literal("Bone Cost: $" + DEC_FMT.format(cost)));
                 calcOutputLabel.text(Component.literal("Kelp Blocks: " + DEC_FMT.format(kelpBlocks)));
-                calcRevenueBreakevenLabel.text(Component.literal("Revenue: $" + DEC_FMT.format(revenue)));
+                calcRevenueBreakevenLabel.text(Component.literal("Raw Rev: $" + DEC_FMT.format(revenueRaw)));
 
-                boolean isPos = profit >= 0;
-                String sign = isPos ? "+" : "-";
-                calcProfitLabel.text(Component.literal("Profit: " + sign + "$" + DEC_FMT.format(Math.abs(profit))));
-                calcProfitLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+                boolean isPosRaw = profitRaw >= 0;
+                String signRaw = isPosRaw ? "+" : "-";
+                calcProfitLabel.text(Component.literal("Raw Profit: " + signRaw + "$" + DEC_FMT.format(Math.abs(profitRaw))));
+                calcProfitLabel.color(Color.ofRgb(isPosRaw ? 0x10B981 : 0xEF4444));
 
-                calcPctLabel.text(Component.literal("ROI%: " + (isPos ? "+" : "") + String.format("%.1f%%", roiPct)));
-                calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+                calcPctLabel.text(Component.literal("Raw ROI: " + (isPosRaw ? "+" : "") + String.format("%.1f%%", roiRawPct)));
+                calcPctLabel.color(Color.ofRgb(isPosRaw ? 0x10B981 : 0xEF4444));
+
+                if (calcSmeltedProfitLabel != null && calcSmeltedPctLabel != null) {
+                    boolean isPosDried = profitDried >= 0;
+                    String signDried = isPosDried ? "+" : "-";
+                    calcSmeltedProfitLabel.text(Component.literal("Smelted Profit: " + signDried + "$" + DEC_FMT.format(Math.abs(profitDried))));
+                    calcSmeltedProfitLabel.color(Color.ofRgb(isPosDried ? 0x10B981 : 0xEF4444));
+
+                    calcSmeltedPctLabel.text(Component.literal("Smelted ROI: " + (isPosDried ? "+" : "") + String.format("%.1f%% (Coal: $" + DEC_FMT.format(charcoalCost) + ")", roiDriedPct)));
+                    calcSmeltedPctLabel.color(Color.ofRgb(isPosDried ? 0x10B981 : 0xEF4444));
+                }
             }
         } catch (Exception ignored) {}
     }
