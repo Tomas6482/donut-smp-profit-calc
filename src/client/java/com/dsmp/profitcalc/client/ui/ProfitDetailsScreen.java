@@ -208,19 +208,17 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout tabBar = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         tabBar.margins(Insets.bottom(6));
 
-        tabBoneBtn = UIComponents.button(Component.literal("🦴 Bone Flip"), btn -> {
+        tabBoneBtn = UIComponents.button(Component.literal("Bone Flip"), btn -> {
             selectedTab = 0;
             config.setSavedSelectedTab(0);
-            rebuildLeftPanel();
-            updateCalc();
+            Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
         });
         tabBoneBtn.sizing(Sizing.fill(48), Sizing.fixed(18));
 
-        tabKelpBtn = UIComponents.button(Component.literal("🌿 Kelp Flip"), btn -> {
+        tabKelpBtn = UIComponents.button(Component.literal("Kelp Flip"), btn -> {
             selectedTab = 1;
             config.setSavedSelectedTab(1);
-            rebuildLeftPanel();
-            updateCalc();
+            Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
         });
         tabKelpBtn.sizing(Sizing.fill(48), Sizing.fixed(18));
         tabKelpBtn.margins(Insets.left(4));
@@ -234,6 +232,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             // --- BONE FLIP ---
             leftPanel.child(UIComponents.label(Component.literal("Bone Price ($/bone):")).color(Color.ofRgb(0x9CA3AF)));
             bonePriceInput = UIComponents.textBox(Sizing.fill(100));
+            bonePriceInput.setTextColorUneditable(0xE0E0E0);
+            bonePriceInput.setTextColorUneditable(0xE0E0E0);
             bonePriceInput.setMaxLength(16);
             bonePriceInput.text(config.getSavedBonePrice());
             bonePriceInput.onChanged().subscribe(s -> {
@@ -245,6 +245,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             leftPanel.child(UIComponents.label(Component.literal("Block Price ($/block):")).color(Color.ofRgb(0x9CA3AF)));
             targetPriceInput = UIComponents.textBox(Sizing.fill(100));
+            targetPriceInput.setTextColorUneditable(0xE0E0E0);
+            targetPriceInput.setTextColorUneditable(0xE0E0E0);
             targetPriceInput.setMaxLength(16);
             targetPriceInput.text(config.getSavedBlockPrice());
             targetPriceInput.onChanged().subscribe(s -> {
@@ -256,6 +258,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             leftPanel.child(UIComponents.label(Component.literal("Bones Qty:")).color(Color.ofRgb(0x9CA3AF)));
             qtyInput = UIComponents.textBox(Sizing.fill(100));
+            qtyInput.setTextColorUneditable(0xE0E0E0);
+            qtyInput.setTextColorUneditable(0xE0E0E0);
             qtyInput.setMaxLength(16);
             qtyInput.text(config.getSavedBonesQty());
             qtyInput.onChanged().subscribe(s -> {
@@ -268,6 +272,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             // --- KELP FLIP ---
             leftPanel.child(UIComponents.label(Component.literal("Bone Price ($/bone):")).color(Color.ofRgb(0x9CA3AF)));
             bonePriceInput = UIComponents.textBox(Sizing.fill(100));
+            bonePriceInput.setTextColorUneditable(0xE0E0E0);
+            bonePriceInput.setTextColorUneditable(0xE0E0E0);
             bonePriceInput.setMaxLength(16);
             bonePriceInput.text(config.getSavedBonePrice());
             bonePriceInput.onChanged().subscribe(s -> {
@@ -279,6 +285,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             leftPanel.child(UIComponents.label(Component.literal("Raw Kelp Price ($/bl):")).color(Color.ofRgb(0x9CA3AF)));
             targetPriceInput = UIComponents.textBox(Sizing.fill(100));
+            targetPriceInput.setTextColorUneditable(0xE0E0E0);
+            targetPriceInput.setTextColorUneditable(0xE0E0E0);
             targetPriceInput.setMaxLength(16);
             targetPriceInput.text(config.getSavedRawKelpPrice());
             targetPriceInput.onChanged().subscribe(s -> {
@@ -290,6 +298,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             leftPanel.child(UIComponents.label(Component.literal("Dried Kelp Price ($/bl):")).color(Color.ofRgb(0x9CA3AF)));
             driedKelpPriceInput = UIComponents.textBox(Sizing.fill(100));
+            driedKelpPriceInput.setTextColorUneditable(0xE0E0E0);
+            driedKelpPriceInput.setTextColorUneditable(0xE0E0E0);
             driedKelpPriceInput.setMaxLength(16);
             driedKelpPriceInput.text(config.getSavedDriedKelpPrice());
             driedKelpPriceInput.onChanged().subscribe(s -> {
@@ -301,6 +311,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             leftPanel.child(UIComponents.label(Component.literal("Charcoal Price ($/ea):")).color(Color.ofRgb(0x9CA3AF)));
             charcoalPriceInput = UIComponents.textBox(Sizing.fill(100));
+            charcoalPriceInput.setTextColorUneditable(0xE0E0E0);
+            charcoalPriceInput.setTextColorUneditable(0xE0E0E0);
             charcoalPriceInput.setMaxLength(16);
             charcoalPriceInput.text(config.getSavedCharcoalPrice());
             charcoalPriceInput.onChanged().subscribe(s -> {
@@ -312,6 +324,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             leftPanel.child(UIComponents.label(Component.literal("Bones Qty:")).color(Color.ofRgb(0x9CA3AF)));
             qtyInput = UIComponents.textBox(Sizing.fill(100));
+            qtyInput.setTextColorUneditable(0xE0E0E0);
+            qtyInput.setTextColorUneditable(0xE0E0E0);
             qtyInput.setMaxLength(16);
             qtyInput.text(config.getSavedBonesQty());
             qtyInput.onChanged().subscribe(s -> {
