@@ -88,14 +88,14 @@ public class ProfitTracker {
     public synchronized void addTransaction(Transaction tx) {
         if (tx == null) return;
 
-        // Prevent duplicate transaction within 2 seconds
+        // Prevent identical duplicate packet firings within 150ms
         if (!transactions.isEmpty()) {
             Transaction last = transactions.get(0);
             if (last.getType() == tx.getType() &&
                 last.getItemName().equalsIgnoreCase(tx.getItemName()) &&
                 last.getAmount() == tx.getAmount() &&
                 Math.abs(last.getTotalPrice() - tx.getTotalPrice()) < 0.01 &&
-                System.currentTimeMillis() - last.getTimestamp() < 2000) {
+                System.currentTimeMillis() - last.getTimestamp() < 150) {
                 if (ProfitConfig.getInstance().isVerboseLogging()) {
                     LOGGER.info("[DONUT PROFIT/TRACKER] Skipped duplicate transaction: {}", tx.getSummaryText());
                 }
