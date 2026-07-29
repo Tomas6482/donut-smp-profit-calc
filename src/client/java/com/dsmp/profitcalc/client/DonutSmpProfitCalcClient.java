@@ -157,6 +157,14 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 						AutoUpdater.downloadAndInstall();
 						return 1;
 					}))
+					.then(ClientCommandManager.literal("restart-test").executes(context -> {
+						context.getSource().sendFeedback(Component.literal("§e[Donut Profit] Testing restart in 3 seconds..."));
+						Minecraft.getInstance().execute(() -> {
+							try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+							com.dsmp.profitcalc.client.ui.RestartModalScreen.restartGame();
+						});
+						return 1;
+					}))
 			);
 		});
 

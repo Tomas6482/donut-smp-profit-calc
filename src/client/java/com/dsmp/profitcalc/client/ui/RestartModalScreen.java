@@ -16,8 +16,19 @@ import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.lang.management.ManagementFactory;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public class RestartModalScreen extends BaseOwoScreen<FlowLayout> {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/Restart");
 
     private final String newVersion;
 
@@ -67,19 +78,98 @@ public class RestartModalScreen extends BaseOwoScreen<FlowLayout> {
         rootComponent.child(modalCard);
     }
 
-    private void restartGame() {
+    /**
+     * Restarts Minecraft by reconstructing the full JVM launch command.
+     * Works on both Linux and Windows with launchers like Prism/MultiMC.
+     */
+    public static void restartGame() {
         Minecraft mc = Minecraft.getInstance();
         try {
-            String javaBin = System.getProperty("java.home") + "/bin/java";
-            String command = System.getProperty("sun.java.command");
-            if (command != null && !command.isEmpty()) {
-                ProcessBuilder builder = new ProcessBuilder(javaBin, "-cp", System.getProperty("java.class.path"), command);
-                builder.directory(new java.io.File("."));
+            List<String> cmd = buildRestartCommand();
+            if (cmd != null && !cmd.isEmpty()) {
+                LOGGER.info("[Donut Restart] Launching restart command: {}", String.join(" ", cmd));
+                ProcessBuilder builder = new ProcessBuilder(cmd);
+                builder.directory(new File(System.getProperty("user.dir")));
+                builder.inheritIO();
                 builder.start();
+
+                LOGGER.info("[Donut Restart] New process launched, shutting down current instance...");
+                if (mc != null) {
+                    mc.execute(mc::stop);
+                }
+                return;
+            } else {
+                LOGGER.warn("[Donut Restart] Could not build restart command, just shutting down.");
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.error("[Donut Restart] Failed to restart game", e);
+        }
+        // Fallback: just stop the game
         if (mc != null) {
             mc.execute(mc::stop);
         }
+    }
+
+    /**
+     * Reconstructs the full JVM launch command from the current running process.
+     * Uses /proc/self/cmdline on Linux, and ProcessHandle + RuntimeMXBean on Windows.
+     */
+    private static List<String> buildRestartCommand() {
+        // Method 1: On Linux, read /proc/self/cmdline (most reliable)
+        try {
+            Path cmdlinePath = Path.of("/proc/self/cmdline");
+            if (Files.exists(cmdlinePath)) {
+                byte[] bytes = Files.readAllBytes(cmdlinePath);
+                String full = new String(bytes);
+                String[] args = full.split("\0");
+                if (args.length > 0) {
+                    List<String> cmd = new ArrayList<>(List.of(args));
+                    LOGGER.info("[Donut Restart] Built command from /proc/self/cmdline ({} args)", cmd.size());
+                    return cmd;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warn("[Donut Restart] Failed to read /proc/self/cmdline: {}", e.getMessage());
+        }
+
+        // Method 2: Use RuntimeMXBean (cross-platform fallback for Windows)
+        try {
+            String javaHome = System.getProperty("java.home");
+            String os = System.getProperty("os.name", "").toLowerCase();
+            String javaBin = javaHome + File.separator + "bin" + File.separator + (os.contains("win") ? "javaw.exe" : "java");
+
+            List<String> cmd = new ArrayList<>();
+            cmd.add(javaBin);
+
+            // Add all JVM arguments (like -Xmx, -XX:, -D, etc.)
+            List<String> jvmArgs = ManagementFactory.getRuntimeMXBean().getInputArguments();
+            cmd.addAll(jvmArgs);
+
+            // Add classpath
+            String classpath = System.getProperty("java.class.path");
+            if (classpath != null && !classpath.isEmpty()) {
+                cmd.add("-cp");
+                cmd.add(classpath);
+            }
+
+            // Add main class and program arguments
+            String sunCommand = System.getProperty("sun.java.command");
+            if (sunCommand != null && !sunCommand.isEmpty()) {
+                // sun.java.command contains main class + args separated by spaces
+                String[] parts = sunCommand.split("\\s+");
+                for (String part : parts) {
+                    cmd.add(part);
+                }
+            }
+
+            if (cmd.size() > 1) {
+                LOGGER.info("[Donut Restart] Built command from RuntimeMXBean ({} args)", cmd.size());
+                return cmd;
+            }
+        } catch (Exception e) {
+            LOGGER.error("[Donut Restart] Failed to build command from RuntimeMXBean", e);
+        }
+
+        return null;
     }
 }
