@@ -54,6 +54,7 @@ public class AutoOrderCreator {
 
     private static long stateStartTime = 0;
     private static int stateTicks = 0;
+    private static Screen lastClickedItemScreen = null; // used to detect screen change after clicking item
 
     public static void start(String itemName, int amount, double pricePerItem) {
         if (itemName == null || itemName.trim().isEmpty()) {
@@ -73,6 +74,7 @@ public class AutoOrderCreator {
         targetItemName = itemName.trim();
         targetAmount = amount;
         targetPrice = pricePerItem;
+        lastClickedItemScreen = null;
 
         state = State.OPEN_ORDER_GUI;
         stateStartTime = System.currentTimeMillis();
@@ -232,32 +234,40 @@ public class AutoOrderCreator {
             }
 
             case CLICKING_ITEM_BUTTON -> {
-                // Wait 2 ticks for live filter to populate grid
-                if (stateTicks >= 2 && screen != null) {
+                // Wait 20 ticks (1s) for grid filter to settle after pressing Search
+                if (stateTicks >= 20 && screen != null) {
                     Button matchingBtn = findMatchingItemGridButton(screen, targetItemName);
                     if (matchingBtn != null) {
                         LOGGER.info("[Auto Order Creator] Found matching item button '{}', clicking",
                                 matchingBtn.getMessage().getString());
+                        lastClickedItemScreen = screen; // record screen so we can detect the next one
                         pressButton(matchingBtn);
 
                         state = State.WAIT_AMOUNT_SCREEN;
                         stateStartTime = now;
                         stateTicks = 0;
                     } else {
-                        // Keep waiting up to tick limit or fail if search returns 0/multi
-                        if (stateTicks >= 10) {
+                        // Keep waiting up to 80 ticks (4s) for filter to populate then fail
+                        if (stateTicks >= 80) {
                             String query = formatSearchQuery(targetItemName);
-                            fail("Item search for '" + query + "' did not resolve to a unique grid item");
+                            fail("Item search for '" + query + "' did not resolve to any matching grid item after filter");
                         }
                     }
                 }
             }
 
             case WAIT_AMOUNT_SCREEN -> {
-                if (screen != null) {
+                // Wait for a NEW screen to open (different from the Choose Item screen)
+                if (screen != null && screen != lastClickedItemScreen) {
                     String title = getScreenTitle(screen);
-                    if (title.contains("how many") || title.contains("amount") || title.contains("quantity") || hasEditBox(screen)) {
-                        LOGGER.info("[Auto Order Creator] 'How Many?' dialog screen detected: '{}'", title);
+                    if (title.contains("how many") || title.contains("amount") || title.contains("quantity")) {
+                        LOGGER.info("[Auto Order Creator] 'How Many?' dialog screen detected by title: '{}'", title);
+                        state = State.TYPING_AMOUNT;
+                        stateStartTime = now;
+                        stateTicks = 0;
+                    } else if (!(screen instanceof AbstractContainerScreen<?>) && hasEditBox(screen) && stateTicks >= 5) {
+                        // New non-chest dialog with an EditBox = probably amount screen
+                        LOGGER.info("[Auto Order Creator] 'How Many?' dialog screen detected by EditBox on new screen: '{}'", title);
                         state = State.TYPING_AMOUNT;
                         stateStartTime = now;
                         stateTicks = 0;
@@ -601,7 +611,8 @@ public class AutoOrderCreator {
         List<GuiEventListener> widgets = flattenWidgets(screen);
         String cleanQuery = itemQuery.trim().replace("_", " ").toLowerCase(Locale.ROOT);
 
-        List<Button> candidateButtons = new ArrayList<>();
+        Button exactMatch = null;
+        List<Button> containsMatches = new ArrayList<>();
 
         for (GuiEventListener listener : widgets) {
             if (listener instanceof Button button) {
@@ -615,29 +626,37 @@ public class AutoOrderCreator {
                     continue;
                 }
 
-                if (lowerText.equals(cleanQuery) || lowerText.contains(cleanQuery) || cleanQuery.contains(lowerText)) {
-                    candidateButtons.add(button);
+                if (lowerText.equals(cleanQuery)) {
+                    // Perfect exact match — return immediately
+                    LOGGER.info("[Auto Order Creator] findMatchingItemGridButton: exact match found '{}'", btnText);
+                    return button;
+                }
+
+                if (lowerText.contains(cleanQuery)) {
+                    containsMatches.add(button);
                 }
             }
         }
 
-        LOGGER.info("[Auto Order Creator] findMatchingItemGridButton for query '{}' found {} candidates (flattened total: {})",
-                cleanQuery, candidateButtons.size(), widgets.size());
+        LOGGER.info("[Auto Order Creator] findMatchingItemGridButton for query '{}': exact={}, contains={} (total widgets={})",
+                cleanQuery, exactMatch != null, containsMatches.size(), widgets.size());
 
-        if (candidateButtons.size() == 1) {
-            LOGGER.info("[Auto Order Creator] Unique item button candidate selected: '{}'", getCleanWidgetText(candidateButtons.get(0)));
-            return candidateButtons.get(0);
-        } else if (candidateButtons.size() > 1) {
-            // Pick exact match if one exists among candidates
-            for (Button b : candidateButtons) {
-                String text = getCleanWidgetText(b).toLowerCase(Locale.ROOT);
-                if (text.equals(cleanQuery)) {
-                    LOGGER.info("[Auto Order Creator] Exact match item button candidate selected: '{}'", getCleanWidgetText(b));
-                    return b;
+        if (containsMatches.size() == 1) {
+            LOGGER.info("[Auto Order Creator] Unique contains candidate: '{}'", getCleanWidgetText(containsMatches.get(0)));
+            return containsMatches.get(0);
+        } else if (containsMatches.size() > 1) {
+            // Pick the shortest text match (most specific) — e.g. "Oak Log" wins over "Oak Log Stripped"
+            Button best = containsMatches.get(0);
+            for (Button b : containsMatches) {
+                if (getCleanWidgetText(b).length() < getCleanWidgetText(best).length()) {
+                    best = b;
                 }
             }
+            LOGGER.info("[Auto Order Creator] Multiple contains candidates — picking shortest: '{}'", getCleanWidgetText(best));
+            return best;
         }
 
+        LOGGER.warn("[Auto Order Creator] findMatchingItemGridButton returned NULL for query '{}'", cleanQuery);
         return null;
     }
 
