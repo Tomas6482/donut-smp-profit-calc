@@ -27,7 +27,7 @@ public class AutoFlipCalcHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/AutoFlip");
     private static final DecimalFormat DEC_FMT = new DecimalFormat("#,##0.##");
 
-    private static final long INITIAL_COMMAND_DELAY_MS = 350;
+    private static final long INITIAL_COMMAND_DELAY_MS = 600;
     private static final long PAGE_TURN_DELAY_MS = 300;
     private static final long TIMEOUT_LIMIT_MS = 15000;
     private static final int MAX_PAGE_LIMIT = 20;
@@ -40,6 +40,24 @@ public class AutoFlipCalcHandler {
         GOLDEN_APPLE,
         BOOKSHELF,
         TRAPDOOR
+    }
+
+    public static class FlipProfitResult {
+        public final FlipMode mode;
+        public final String displayName;
+        public final double profit;
+        public final double marginPct;
+        public final boolean hasData;
+        public final String detailText;
+
+        public FlipProfitResult(FlipMode mode, String displayName, double profit, double marginPct, boolean hasData, String detailText) {
+            this.mode = mode;
+            this.displayName = displayName;
+            this.profit = profit;
+            this.marginPct = marginPct;
+            this.hasData = hasData;
+            this.detailText = detailText;
+        }
     }
 
     public static class Listing {
@@ -68,6 +86,11 @@ public class AutoFlipCalcHandler {
     public static FlipMode activeMode = FlipMode.BONE;
     private static final Queue<ScanTask> taskQueue = new LinkedList<>();
 
+    private static boolean batchModeActive = false;
+    private static final List<FlipMode> batchModesList = new ArrayList<>();
+    private static int batchCurrentIndex = 0;
+    private static Runnable batchOnCompleteCallback = null;
+
     private static ScanTask currentTask = null;
     private static int pagesScanned = 0;
     private static int consecutiveEmptyPages = 0;
@@ -78,7 +101,11 @@ public class AutoFlipCalcHandler {
 
     public static void stop() {
         running = false;
+        batchModeActive = false;
         taskQueue.clear();
+        batchModesList.clear();
+        batchCurrentIndex = 0;
+        batchOnCompleteCallback = null;
         currentTask = null;
         pagesScanned = 0;
         consecutiveEmptyPages = 0;
@@ -94,11 +121,72 @@ public class AutoFlipCalcHandler {
         return running;
     }
 
+    public static boolean isBatchModeActive() {
+        return batchModeActive;
+    }
+
+    public static int getBatchProgressIndex() {
+        return batchCurrentIndex;
+    }
+
+    public static int getBatchTotalCount() {
+        return batchModesList.size();
+    }
+
+    public static void startBatch(List<FlipMode> modes, Runnable onAllComplete) {
+        Minecraft mc = Minecraft.getInstance();
+        if (running) {
+            if (mc != null && mc.player != null) {
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§c[Auto Flip] A scan is already in progress!"), true);
+            }
+            return;
+        }
+
+        batchModeActive = true;
+        batchModesList.clear();
+        batchModesList.addAll(modes);
+        batchCurrentIndex = 0;
+        batchOnCompleteCallback = onAllComplete;
+
+        startNextBatchStep(mc);
+    }
+
+    private static void startNextBatchStep(Minecraft mc) {
+        if (batchCurrentIndex >= batchModesList.size()) {
+            batchModeActive = false;
+            running = false;
+            if (mc != null && mc.player != null) {
+                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Check All Flips complete!"), true);
+            }
+            if (batchOnCompleteCallback != null) {
+                mc.execute(batchOnCompleteCallback);
+            }
+            return;
+        }
+
+        FlipMode nextMode = batchModesList.get(batchCurrentIndex);
+        if (mc != null && mc.player != null) {
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    String.format("§a[Auto Flip] Checking All Flips... (%d/%d) %s",
+                            batchCurrentIndex + 1, batchModesList.size(), nextMode.name())), true);
+        }
+
+        startInternal(nextMode);
+    }
+
     public static void start() {
         start(FlipMode.BONE);
     }
 
     public static void start(FlipMode mode) {
+        batchModeActive = false;
+        batchModesList.clear();
+        batchCurrentIndex = 0;
+        batchOnCompleteCallback = null;
+        startInternal(mode);
+    }
+
+    private static void startInternal(FlipMode mode) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
@@ -153,7 +241,9 @@ public class AutoFlipCalcHandler {
             mc.player.closeContainer();
         }
 
-        mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Auto checking prices for " + mode.name() + "..."), true);
+        if (!batchModeActive) {
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Auto checking prices for " + mode.name() + "..."), true);
+        }
     }
 
     public static void onTick(Minecraft mc) {
@@ -260,6 +350,12 @@ public class AutoFlipCalcHandler {
             int block = accumulatedListings.getOrDefault("dried_kelp_block", Collections.emptyList()).size();
             return Math.max(raw, Math.max(dried, block));
         }
+        if (targetKey.equals("ah_trapdoor_64")) {
+            return accumulatedListings.getOrDefault("ah_trapdoor_64", Collections.emptyList()).size();
+        }
+        if (targetKey.equals("ah_trapdoor_page1")) {
+            return accumulatedListings.getOrDefault("ah_trapdoor_page1", Collections.emptyList()).size();
+        }
         return accumulatedListings.getOrDefault(targetKey, Collections.emptyList()).size();
     }
 
@@ -282,13 +378,6 @@ public class AutoFlipCalcHandler {
         if (containerScreen.getMenu() == null) return 0;
         List<Slot> slots = containerScreen.getMenu().slots;
         if (slots.size() < 45) return 0;
-
-        // Container loading check: if slots 0..44 are all empty (network packet pending), wait
-        int nonCount = 0;
-        for (int i = 0; i < Math.min(45, slots.size()); i++) {
-            if (!slots.get(i).getItem().isEmpty()) nonCount++;
-        }
-        if (nonCount == 0) return 0;
 
         int newMatchesCount = 0;
 
@@ -408,7 +497,7 @@ public class AutoFlipCalcHandler {
             } else {
                 double sum = 0.0;
                 for (Listing l : matches) {
-                    sum += l.price; // l.price is pricePerUnit
+                    sum += l.price;
                 }
                 double avgUnitBaseline = sum / matches.size();
                 finalComputedPrices.put("ah_trapdoor_64", avgUnitBaseline);
@@ -506,7 +595,6 @@ public class AutoFlipCalcHandler {
     }
 
     private static void finishAutoScan(Minecraft mc) {
-        running = false;
         currentTask = null;
         ProfitConfig config = ProfitConfig.getInstance();
 
@@ -592,6 +680,14 @@ public class AutoFlipCalcHandler {
             config.setSavedTrapdoorPage1Ceiling("0");
         }
 
+        if (batchModeActive) {
+            batchCurrentIndex++;
+            startNextBatchStep(mc);
+            return;
+        }
+
+        running = false;
+
         int targetTab = 0;
         switch (activeMode) {
             case BONE: targetTab = 0; break;
@@ -615,6 +711,128 @@ public class AutoFlipCalcHandler {
             ProfitConfig.getInstance().setSavedSelectedTab(tabIdx);
             mc.setScreen(new ProfitDetailsScreen());
         });
+    }
+
+    public static FlipProfitResult computeProfitForMode(FlipMode mode) {
+        ProfitConfig config = ProfitConfig.getInstance();
+        String name = switch (mode) {
+            case BONE -> "Bone Flip";
+            case KELP -> "Kelp Flip";
+            case OAK_LOG -> "Oak Log Flip";
+            case STICKY_PISTON -> "Sticky Piston Flip";
+            case GOLDEN_APPLE -> "Golden Apple Flip";
+            case BOOKSHELF -> "Bookshelf Flip";
+            case TRAPDOOR -> "Trapdoor Flip";
+        };
+
+        try {
+            switch (mode) {
+                case BONE: {
+                    double boneP = parseDouble(config.getSavedBonePrice(), 0.0);
+                    double blockP = parseDouble(config.getSavedBlockPrice(), 0.0);
+                    double qty = parseDouble(config.getSavedBonesQty(), 100000.0);
+                    if (boneP <= 0 || blockP <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing saved prices");
+
+                    double cost = boneP * qty;
+                    double blocksCraft = qty / 3.0;
+                    double revenue = blocksCraft * blockP;
+                    double profit = revenue - cost;
+                    double marginPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "");
+                }
+                case KELP: {
+                    double boneP = parseDouble(config.getSavedBonePrice(), 0.0);
+                    double rawKelpP = parseDouble(config.getSavedRawKelpPrice(), 0.0);
+                    double driedKelpP = parseDouble(config.getSavedDriedKelpPrice(), 0.0);
+                    double charcoalP = parseDouble(config.getSavedCharcoalPrice(), 0.0);
+                    double qty = parseDouble(config.getSavedBonesQty(), 100000.0);
+                    if (boneP <= 0 || (rawKelpP <= 0 && driedKelpP <= 0)) return new FlipProfitResult(mode, name, 0, 0, false, "Missing saved prices");
+
+                    double cost = boneP * qty;
+                    double kelpBlocks = qty * 3.0;
+                    double revenue = kelpBlocks * (driedKelpP > 0 ? driedKelpP : rawKelpP);
+                    double charcoalCost = (driedKelpP > 0) ? (kelpBlocks * 1.125 * charcoalP) : 0.0;
+                    double totalCost = cost + charcoalCost;
+                    double profit = revenue - totalCost;
+                    double marginPct = totalCost > 0 ? (profit / totalCost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "");
+                }
+                case OAK_LOG: {
+                    double logP = parseDouble(config.getSavedOakLogPrice(), 0.0);
+                    double plankP = parseDouble(config.getSavedOakPlanksPrice(), 0.0);
+                    double qty = parseDouble(config.getSavedBonesQty(), 100000.0);
+                    if (logP <= 0 || plankP <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing saved prices");
+
+                    double cost = qty * logP;
+                    double revenue = (qty * 4.0) * plankP;
+                    double profit = revenue - cost;
+                    double marginPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "");
+                }
+                case STICKY_PISTON: {
+                    double pistonP = parseDouble(config.getSavedPistonPrice(), 0.0);
+                    double slimeP = parseDouble(config.getSavedSlimeballPrice(), 0.0);
+                    double stickyP = parseDouble(config.getSavedStickyPistonPrice(), 0.0);
+                    double qty = parseDouble(config.getSavedBonesQty(), 1000.0);
+                    if (pistonP <= 0 || slimeP <= 0 || stickyP <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing saved prices");
+
+                    double cost = (pistonP + slimeP) * qty;
+                    double revenue = stickyP * qty;
+                    double profit = revenue - cost;
+                    double marginPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "");
+                }
+                case GOLDEN_APPLE: {
+                    double goldP = parseDouble(config.getSavedGoldIngotPrice(), 0.0);
+                    double appleP = parseDouble(config.getSavedApplePrice(), 0.0);
+                    double gappleP = parseDouble(config.getSavedGapplePrice(), 0.0);
+                    double qty = parseDouble(config.getSavedBonesQty(), 1000.0);
+                    if (goldP <= 0 || gappleP <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing saved prices");
+
+                    double cost = ((goldP * 8.0) + appleP) * qty;
+                    double revenue = gappleP * qty;
+                    double profit = revenue - cost;
+                    double marginPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "");
+                }
+                case BOOKSHELF: {
+                    double plankP = parseDouble(config.getSavedOakPlanksPrice(), 0.0);
+                    double bookP = parseDouble(config.getSavedBookPrice(), 0.0);
+                    double bookshelfP = parseDouble(config.getSavedBookshelfPrice(), 0.0);
+                    double qty = parseDouble(config.getSavedBonesQty(), 1000.0);
+                    if (plankP <= 0 || bookshelfP <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing saved prices");
+
+                    double cost = ((plankP * 6.0) + (bookP * 3.0)) * qty;
+                    double revenue = bookshelfP * qty;
+                    double profit = revenue - cost;
+                    double marginPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "");
+                }
+                case TRAPDOOR: {
+                    double logP = parseDouble(config.getSavedOakLogPrice(), 0.0);
+                    double offset = parseDouble(config.getSavedTrapdoorOffset(), 100.0);
+                    double baselineUnit = parseDouble(config.getSavedTrapdoorBaselinePrice(), -1.0);
+
+                    if (logP <= 0 || baselineUnit <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing log price or baseline");
+
+                    int[] STACK_SIZES = {4, 8, 12, 16, 24};
+                    int stackIdx = Math.min(STACK_SIZES.length - 1, Math.max(0, config.getSavedTrapdoorStackSizeIndex()));
+                    int selectedStackSize = STACK_SIZES[stackIdx];
+
+                    double askPricePerUnit = Math.ceil(baselineUnit) + offset;
+                    double logsNeeded = selectedStackSize * 0.75;
+                    double totalCost = logsNeeded * logP;
+                    double totalRevenue = askPricePerUnit * selectedStackSize;
+                    double profit = totalRevenue - totalCost;
+                    double marginPct = totalCost > 0 ? (profit / totalCost) * 100.0 : 0.0;
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, selectedStackSize + "x Stack");
+                }
+            }
+        } catch (Exception e) {
+            return new FlipProfitResult(mode, name, 0, 0, false, "Error: " + e.getMessage());
+        }
+
+        return new FlipProfitResult(mode, name, 0, 0, false, "No data");
     }
 
     private static double parseQuantityFromStack(ItemStack stack) {

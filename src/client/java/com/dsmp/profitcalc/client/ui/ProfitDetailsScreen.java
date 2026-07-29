@@ -7,6 +7,7 @@ import com.dsmp.profitcalc.client.handler.AutoFlipCalcHandler.FlipMode;
 import com.dsmp.profitcalc.client.tracker.ProfitTracker;
 import com.dsmp.profitcalc.client.tracker.Transaction;
 import com.dsmp.profitcalc.client.tracker.TransactionType;
+import java.util.ArrayList;
 import io.wispforest.owo.ui.base.BaseOwoScreen;
 import io.wispforest.owo.ui.component.ButtonComponent;
 import io.wispforest.owo.ui.component.CheckboxComponent;
@@ -126,7 +127,23 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             refreshData();
         });
 
+        ButtonComponent checkAllBtn = UIComponents.button(Component.literal("Check All"), btn -> {
+            if (AutoFlipCalcHandler.isRunning()) {
+                if (Minecraft.getInstance().player != null) {
+                    Minecraft.getInstance().player.displayClientMessage(Component.literal("§c[Auto Flip] A scan is already in progress!"), true);
+                }
+                return;
+            }
+            AutoFlipCalcHandler.startBatch(
+                List.of(FlipMode.BONE, FlipMode.KELP, FlipMode.OAK_LOG, FlipMode.STICKY_PISTON,
+                        FlipMode.GOLDEN_APPLE, FlipMode.BOOKSHELF, FlipMode.TRAPDOOR),
+                this::openCheckAllResultsModal
+            );
+        });
+        checkAllBtn.margins(Insets.right(4));
+
         headerRight.child(loggingToggleButton);
+        headerRight.child(checkAllBtn);
         headerRight.child(settingsBtn);
         headerRight.child(dumperBtn);
         headerRight.child(undoLastBtn);
@@ -1357,6 +1374,117 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         actionRow2.child(copyJsonBtn);
         actionRow2.child(closeBottomBtn);
         modalCard.child(actionRow2);
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
+    }
+
+    public void openCheckAllResultsModal() {
+        if (uiAdapter == null) return;
+        closeSettingsModal();
+
+        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(380), Sizing.fixed(260));
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFF262C36)))
+                .padding(Insets.of(12));
+
+        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Flip Profitability (7 Flips Checked)"));
+        modalTitle.color(Color.ofRgb(0xF59E0B));
+
+        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
+        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
+        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+        closeSpacer.child(closeBtn);
+
+        modalHeader.child(modalTitle);
+        modalHeader.child(closeSpacer);
+        modalCard.child(modalHeader);
+
+        // Calculate results for all 7 modes using computeProfitForMode
+        List<AutoFlipCalcHandler.FlipProfitResult> results = new ArrayList<>();
+        for (FlipMode mode : FlipMode.values()) {
+            results.add(AutoFlipCalcHandler.computeProfitForMode(mode));
+        }
+
+        // Sort descending by profit (hasData = false at bottom)
+        results.sort((a, b) -> {
+            if (a.hasData && !b.hasData) return -1;
+            if (!a.hasData && b.hasData) return 1;
+            if (!a.hasData && !b.hasData) return 0;
+            return Double.compare(b.profit, a.profit);
+        });
+
+        // Table Header
+        FlowLayout tableHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        tableHeader.padding(Insets.of(4)).surface(Surface.flat(0x80232936)).margins(Insets.vertical(4));
+
+        LabelComponent thFlip = UIComponents.label(Component.literal("Flip"));
+        thFlip.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(130), Sizing.content());
+
+        LabelComponent thProfit = UIComponents.label(Component.literal("Est. Profit"));
+        thProfit.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(110), Sizing.content());
+
+        LabelComponent thMargin = UIComponents.label(Component.literal("Margin %"));
+        thMargin.color(Color.ofRgb(0x9CA3AF));
+
+        tableHeader.child(thFlip);
+        tableHeader.child(thProfit);
+        tableHeader.child(thMargin);
+        modalCard.child(tableHeader);
+
+        // Scroll Container with Rows
+        FlowLayout rowsLayout = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+
+        int idx = 0;
+        for (AutoFlipCalcHandler.FlipProfitResult r : results) {
+            FlowLayout row = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.fixed(20));
+            row.padding(Insets.of(2, 4, 2, 4));
+            int bg = (idx % 2 == 0) ? 0x40181C24 : 0x2011141A;
+            row.surface(Surface.flat(bg)).verticalAlignment(VerticalAlignment.CENTER);
+
+            LabelComponent nameLbl = UIComponents.label(Component.literal(r.displayName));
+            nameLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(130), Sizing.content());
+
+            if (r.hasData) {
+                boolean isPos = r.profit >= 0;
+                String sign = isPos ? "+" : "-";
+                String profitStr = sign + "$" + DEC_FMT.format(Math.abs(r.profit));
+                String marginStr = (isPos ? "+" : "") + String.format("%.1f%%", r.marginPct);
+
+                LabelComponent profitLbl = UIComponents.label(Component.literal(profitStr));
+                profitLbl.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(110), Sizing.content());
+
+                LabelComponent marginLbl = UIComponents.label(Component.literal(marginStr));
+                marginLbl.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+
+                row.child(nameLbl);
+                row.child(profitLbl);
+                row.child(marginLbl);
+            } else {
+                LabelComponent noDataLbl = UIComponents.label(Component.literal("No data"));
+                noDataLbl.color(Color.ofRgb(0x9CA3AF));
+
+                row.child(nameLbl);
+                row.child(noDataLbl);
+            }
+
+            rowsLayout.child(row);
+            idx++;
+        }
+
+        ScrollContainer<FlowLayout> scroll = UIContainers.verticalScroll(Sizing.fill(100), Sizing.fixed(150), rowsLayout);
+        scroll.margins(Insets.bottom(6));
+        modalCard.child(scroll);
+
+        ButtonComponent doneBtn = UIComponents.button(Component.literal("Close"), btn -> closeSettingsModal());
+        doneBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
+        modalCard.child(doneBtn);
 
         activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
