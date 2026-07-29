@@ -197,9 +197,11 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 			LOGGER.info("  Line: '{}'", line);
 		}
 
+		List<net.minecraft.client.gui.components.events.GuiEventListener> widgets = com.dsmp.profitcalc.client.handler.AutoOrderCreator.flattenWidgets(screen);
+		LOGGER.info("--- Extracted Flattened Widgets ({}) ---", widgets.size());
 		int widgetIndex = 0;
-		for (var child : screen.children()) {
-			LOGGER.info("Child #{}: Class: {}", widgetIndex, child.getClass().getName());
+		for (var child : widgets) {
+			LOGGER.info("Widget #{}: Class: {}", widgetIndex, child.getClass().getName());
 			if (child instanceof AbstractWidget widget) {
 				LOGGER.info("  Widget Message: '{}'", widget.getMessage() != null ? widget.getMessage().getString() : "NULL");
 				LOGGER.info("  Widget Bounds: x={}, y={}, w={}, h={}", widget.getX(), widget.getY(), widget.getWidth(), widget.getHeight());
