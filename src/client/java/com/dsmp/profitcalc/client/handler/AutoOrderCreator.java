@@ -109,11 +109,11 @@ public class AutoOrderCreator {
         long now = System.currentTimeMillis();
         Screen screen = mc.screen;
 
-        // Timeout check (3 seconds per step max)
+        // Timeout check (12 seconds per step max for server latency)
         if (state != State.IDLE && state != State.FINISHED && state != State.FAILED) {
-            if (stateTicks > 60 || (now - stateStartTime > 3500)) {
-                LOGGER.warn("[Auto Order Creator] Timed out in state: {}", state);
-                fail("Timed out waiting in step " + state.name());
+            if (stateTicks > 240 || (now - stateStartTime > 12000)) {
+                LOGGER.warn("[Auto Order Creator] Timed out in state: {} (ticks={}, elapsed={}ms)", state, stateTicks, now - stateStartTime);
+                fail("Server lag timeout in step " + state.name() + " (took >12s)");
                 return;
             }
         }
