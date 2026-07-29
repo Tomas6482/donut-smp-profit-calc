@@ -158,6 +158,11 @@ public class AutoFlipCalcHandler {
             if (mc != null && mc.player != null) {
                 mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Check All Flips complete!"), true);
             }
+            mc.execute(() -> {
+                ProfitDetailsScreen screen = new ProfitDetailsScreen();
+                mc.setScreen(screen);
+                screen.openCheckAllResultsModal();
+            });
             if (batchOnCompleteCallback != null) {
                 mc.execute(batchOnCompleteCallback);
             }
