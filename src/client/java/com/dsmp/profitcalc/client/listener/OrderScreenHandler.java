@@ -191,6 +191,9 @@ public class OrderScreenHandler {
         }
 
         if (screen == null) {
+            if (client.player != null && client.player.containerMenu != client.player.inventoryMenu) {
+                client.player.closeContainer();
+            }
             if (OrderStatusTracker.getInstance().getCurrentState() != OrderState.IDLE) {
                 if (OrderStatusTracker.getInstance().getCurrentState() == OrderState.DELIVERING_ORDER) {
                     checkFinalDelivery(client);

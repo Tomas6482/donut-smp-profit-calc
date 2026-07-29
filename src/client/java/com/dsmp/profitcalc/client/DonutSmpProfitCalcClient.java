@@ -102,6 +102,7 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 				}
 			}
 			while (openGuiKey.consumeClick()) {
+				if (client.player != null) client.player.closeContainer();
 				client.setScreen(new ProfitDetailsScreen());
 			}
 			while (debugF6Key.consumeClick()) {
@@ -116,6 +117,7 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 				AutoFlipCalcHandler.stop();
 				com.dsmp.profitcalc.client.handler.BestDealFinderHandler.stop();
 				if (client.player != null) {
+					client.player.closeContainer();
 					client.player.displayClientMessage(Component.literal("§c[Donut Profit] Force stopped active search & scan!"), true);
 				}
 			}
@@ -129,7 +131,10 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
 			dispatcher.register(ClientCommandManager.literal("profit")
 					.executes(context -> {
-						Minecraft.getInstance().execute(() -> Minecraft.getInstance().setScreen(new ProfitDetailsScreen()));
+						Minecraft.getInstance().execute(() -> {
+							if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.closeContainer();
+							Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
+						});
 						return 1;
 					})
 					.then(ClientCommandManager.literal("reset").executes(context -> {

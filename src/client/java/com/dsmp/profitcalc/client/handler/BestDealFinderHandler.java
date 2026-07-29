@@ -156,6 +156,7 @@ public class BestDealFinderHandler {
         successfulPurchasesCount = 0;
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {
+            mc.player.closeContainer();
             mc.player.displayClientMessage(Component.literal("§e[Best Deal Finder] Search cancelled."), true);
         }
     }
@@ -538,6 +539,7 @@ public class BestDealFinderHandler {
             currentState = State.IDLE;
             currentPurchaseDeal = null;
             if (mc.player != null) {
+                mc.player.closeContainer();
                 mc.player.displayClientMessage(Component.literal("§a[Best Deal Finder] Completed " + successfulPurchasesCount + "/" + totalPurchasesInChain + " purchases in bundle!"), true);
             }
             return;
@@ -564,6 +566,7 @@ public class BestDealFinderHandler {
         running = false;
         currentState = State.IDLE;
         if (mc.player != null) {
+            mc.player.closeContainer();
             mc.player.displayClientMessage(Component.literal("§c[Best Deal Finder] Multi-buy aborted (" + successfulPurchasesCount + "/" + totalPurchasesInChain + " completed): " + reason), true);
         }
     }
