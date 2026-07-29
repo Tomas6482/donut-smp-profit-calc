@@ -102,6 +102,23 @@ public class ProfitConfig {
     public String getSavedTrapdoorPage1Ceiling() { return savedTrapdoorPage1Ceiling; }
     public void setSavedTrapdoorPage1Ceiling(String val) { this.savedTrapdoorPage1Ceiling = val; save(); }
 
+    private String savedBestDealItem = "oak_trapdoor";
+    private String savedBestDealQty = "";
+    private String savedBestDealMaxPrice = "";
+    private boolean savedBestDealAutoBuy = false;
+
+    public String getSavedBestDealItem() { return savedBestDealItem != null ? savedBestDealItem : "oak_trapdoor"; }
+    public void setSavedBestDealItem(String val) { this.savedBestDealItem = val; save(); }
+
+    public String getSavedBestDealQty() { return savedBestDealQty != null ? savedBestDealQty : ""; }
+    public void setSavedBestDealQty(String val) { this.savedBestDealQty = val; save(); }
+
+    public String getSavedBestDealMaxPrice() { return savedBestDealMaxPrice != null ? savedBestDealMaxPrice : ""; }
+    public void setSavedBestDealMaxPrice(String val) { this.savedBestDealMaxPrice = val; save(); }
+
+    public boolean isSavedBestDealAutoBuy() { return savedBestDealAutoBuy; }
+    public void setSavedBestDealAutoBuy(boolean val) { this.savedBestDealAutoBuy = val; save(); }
+
     // Unified Configurable Command Delays (Custom Min/Max Textboxes, default 400-600ms)
     private int commandMinDelayMs = 400;
     private int commandMaxDelayMs = 600;

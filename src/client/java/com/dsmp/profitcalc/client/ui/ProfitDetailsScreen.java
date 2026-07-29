@@ -4,6 +4,7 @@ import com.dsmp.profitcalc.client.config.ProfitConfig;
 import com.dsmp.profitcalc.client.dumper.*;
 import com.dsmp.profitcalc.client.handler.AutoFlipCalcHandler;
 import com.dsmp.profitcalc.client.handler.AutoFlipCalcHandler.FlipMode;
+import com.dsmp.profitcalc.client.handler.BestDealFinderHandler;
 import com.dsmp.profitcalc.client.tracker.ProfitTracker;
 import com.dsmp.profitcalc.client.tracker.Transaction;
 import com.dsmp.profitcalc.client.tracker.TransactionType;
@@ -116,6 +117,9 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         ButtonComponent dumperBtn = UIComponents.button(Component.literal("Price Dumper"), btn -> openPriceDumperSetupModal());
         dumperBtn.margins(Insets.right(4));
 
+        ButtonComponent bestDealBtn = UIComponents.button(Component.literal("Best Deal Finder"), btn -> openBestDealFinderModal(null));
+        bestDealBtn.margins(Insets.right(4));
+
         ButtonComponent undoLastBtn = UIComponents.button(Component.literal("Undo"), btn -> {
             ProfitTracker.getInstance().removeLatestTransaction();
             refreshData();
@@ -144,6 +148,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         headerRight.child(loggingToggleButton);
         headerRight.child(checkAllBtn);
+        headerRight.child(bestDealBtn);
         headerRight.child(settingsBtn);
         headerRight.child(dumperBtn);
         headerRight.child(undoLastBtn);
@@ -1488,6 +1493,186 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
+    }
+
+    public void openBestDealFinderModal(String statusOverride) {
+        if (uiAdapter == null) return;
+        closeSettingsModal();
+
+        ProfitConfig config = ProfitConfig.getInstance();
+        int currentThemeHex = config.getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(380), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFF262C36)))
+                .padding(Insets.of(12));
+
+        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Best Deal Finder"));
+        modalTitle.color(Color.ofRgb(0xF59E0B));
+
+        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
+        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
+        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+        closeSpacer.child(closeBtn);
+
+        modalHeader.child(modalTitle);
+        modalHeader.child(closeSpacer);
+        modalHeader.margins(Insets.bottom(8));
+        modalCard.child(modalHeader);
+
+        // Inputs
+        modalCard.child(UIComponents.label(Component.literal("Target Item Name:")).color(Color.ofRgb(0x9CA3AF)));
+        TextBoxComponent itemBox = UIComponents.textBox(Sizing.fill(100), config.getSavedBestDealItem());
+        itemBox.onChanged().subscribe(config::setSavedBestDealItem);
+        itemBox.margins(Insets.bottom(4));
+        modalCard.child(itemBox);
+
+        FlowLayout rowInputs = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+
+        FlowLayout colQty = UIContainers.verticalFlow(Sizing.fill(48), Sizing.content());
+        colQty.child(UIComponents.label(Component.literal("Target Qty (Blank=Max):")).color(Color.ofRgb(0x9CA3AF)));
+        TextBoxComponent qtyBox = UIComponents.textBox(Sizing.fill(100), config.getSavedBestDealQty());
+        qtyBox.onChanged().subscribe(config::setSavedBestDealQty);
+        colQty.child(qtyBox);
+        colQty.margins(Insets.right(4));
+
+        FlowLayout colCap = UIContainers.verticalFlow(Sizing.fill(48), Sizing.content());
+        colCap.child(UIComponents.label(Component.literal("Max Price/Unit (Blank=∞):")).color(Color.ofRgb(0x9CA3AF)));
+        TextBoxComponent maxPriceBox = UIComponents.textBox(Sizing.fill(100), config.getSavedBestDealMaxPrice());
+        maxPriceBox.onChanged().subscribe(config::setSavedBestDealMaxPrice);
+        colCap.child(maxPriceBox);
+
+        rowInputs.child(colQty);
+        rowInputs.child(colCap);
+        rowInputs.margins(Insets.bottom(6));
+        modalCard.child(rowInputs);
+
+        CheckboxComponent autoBuyCb = UIComponents.checkbox(Component.literal("Auto Buy (Purchases immediately)"));
+        autoBuyCb.checked(config.isSavedBestDealAutoBuy());
+        autoBuyCb.onChanged(val -> config.setSavedBestDealAutoBuy(val));
+        autoBuyCb.margins(Insets.bottom(8));
+        modalCard.child(autoBuyCb);
+
+        // Action Button
+        ButtonComponent searchBtn = UIComponents.button(Component.literal("Find Best Deal"), btn -> {
+            String itemStr = itemBox.getValue().trim();
+            if (itemStr.isEmpty()) return;
+
+            int targetQ = BestDealFinderHandler.resolveMaxStackSize(itemStr);
+            try {
+                if (!qtyBox.getValue().trim().isEmpty()) {
+                    targetQ = Integer.parseInt(qtyBox.getValue().trim());
+                }
+            } catch (Exception ignored) {}
+
+            double maxCap = 0.0;
+            try {
+                if (!maxPriceBox.getValue().trim().isEmpty()) {
+                    maxCap = Double.parseDouble(maxPriceBox.getValue().trim().replace(",", ""));
+                }
+            } catch (Exception ignored) {}
+
+            closeSettingsModal();
+            Minecraft.getInstance().setScreen(null);
+            BestDealFinderHandler.startSearch(itemStr, targetQ, maxCap, autoBuyCb.selected());
+        });
+        searchBtn.sizing(Sizing.fill(100), Sizing.fixed(20)).margins(Insets.bottom(8));
+        modalCard.child(searchBtn);
+
+        // Result Panel
+        BestDealFinderHandler.BestDealResult latest = BestDealFinderHandler.getLatestResult();
+        if (latest != null || statusOverride != null) {
+            FlowLayout resultCard = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+            resultCard.surface(Surface.flat(0x40181C24).and(Surface.outline(0xFF333B48)))
+                    .padding(Insets.of(6));
+
+            if (latest != null) {
+                LabelComponent rItem = UIComponents.label(Component.literal("Item: " + latest.matchedItemName));
+                rItem.color(Color.ofRgb(0xF3F4F6));
+
+                LabelComponent rPrice = UIComponents.label(Component.literal("Price/Unit: $" + DEC_FMT.format(latest.pricePerUnit) + " (Total: $" + DEC_FMT.format(latest.totalPrice) + ")"));
+                rPrice.color(Color.ofRgb(0x10B981));
+
+                String statusStr = latest.isQualifying ? "✓ Found" : ("⚠ Best available: " + latest.quantity + "x (less than requested " + latest.requestedQty + "x)");
+                LabelComponent rStatus = UIComponents.label(Component.literal("Status: " + statusStr));
+                rStatus.color(Color.ofRgb(latest.isQualifying ? 0x10B981 : 0xF59E0B));
+
+                resultCard.child(rItem);
+                resultCard.child(rPrice);
+                resultCard.child(rStatus);
+            } else {
+                LabelComponent rStatus = UIComponents.label(Component.literal(statusOverride));
+                rStatus.color(Color.ofRgb(0xEF4444));
+                resultCard.child(rStatus);
+            }
+
+            modalCard.child(resultCard);
+        }
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
+    }
+
+    public void openBestDealConfirmationModal(BestDealFinderHandler.BestDealResult deal, boolean capExceeded) {
+        if (uiAdapter == null || deal == null) return;
+        closeSettingsModal();
+
+        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(360), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(capExceeded ? 0xFFEF4444 : 0xFF10B981)))
+                .padding(Insets.of(12));
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Confirm Purchase - Best Deal"));
+        modalTitle.color(Color.ofRgb(capExceeded ? 0xEF4444 : 0x10B981)).margins(Insets.bottom(8));
+        modalCard.child(modalTitle);
+
+        if (capExceeded) {
+            LabelComponent capWarn = UIComponents.label(Component.literal("⚠ Price/Unit exceeds your Max Price Cap!"));
+            capWarn.color(Color.ofRgb(0xEF4444)).margins(Insets.bottom(6));
+            modalCard.child(capWarn);
+        } else if (!deal.isQualifying) {
+            LabelComponent qtyWarn = UIComponents.label(Component.literal("⚠ Best available is less than requested quantity!"));
+            qtyWarn.color(Color.ofRgb(0xF59E0B)).margins(Insets.bottom(6));
+            modalCard.child(qtyWarn);
+        }
+
+        FlowLayout infoBox = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+        infoBox.surface(Surface.flat(0x40181C24).and(Surface.outline(0xFF262C36)))
+                .padding(Insets.of(6)).margins(Insets.bottom(10));
+
+        infoBox.child(UIComponents.label(Component.literal("Item: " + deal.matchedItemName)).color(Color.ofRgb(0xF3F4F6)));
+        infoBox.child(UIComponents.label(Component.literal("Quantity: " + deal.quantity + "x (Requested: " + deal.requestedQty + "x)")).color(Color.ofRgb(0xD1D5DB)));
+        infoBox.child(UIComponents.label(Component.literal("Price / Unit: $" + DEC_FMT.format(deal.pricePerUnit))).color(Color.ofRgb(0xF59E0B)));
+        infoBox.child(UIComponents.label(Component.literal("Total Cost: $" + DEC_FMT.format(deal.totalPrice))).color(Color.ofRgb(0x10B981)));
+
+        modalCard.child(infoBox);
+
+        FlowLayout actionRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        actionRow.horizontalAlignment(HorizontalAlignment.CENTER);
+
+        ButtonComponent yesBtn = UIComponents.button(Component.literal("Yes, Buy Now"), b -> {
+            closeSettingsModal();
+            Minecraft.getInstance().setScreen(null);
+            BestDealFinderHandler.confirmAndBuyDeal(deal);
+        });
+        yesBtn.sizing(Sizing.fill(48), Sizing.fixed(20));
+        yesBtn.margins(Insets.right(6));
+
+        ButtonComponent noBtn = UIComponents.button(Component.literal("No, Cancel"), b -> closeSettingsModal());
+        noBtn.sizing(Sizing.fill(48), Sizing.fixed(20));
+
+        actionRow.child(yesBtn);
+        actionRow.child(noBtn);
+        modalCard.child(actionRow);
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(false);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
 }
