@@ -1538,7 +1538,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         modalHeader.verticalAlignment(VerticalAlignment.CENTER);
 
-        LabelComponent modalTitle = UIComponents.label(Component.literal("📦 Auto Order Confirmation"));
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Auto Order Confirmation"));
         modalTitle.color(Color.ofRgb(0x10B981));
 
         FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
@@ -1560,12 +1560,50 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         amtLbl.color(Color.ofRgb(0xD1D5DB)).margins(Insets.bottom(4));
         modalCard.child(amtLbl);
 
+        // Row for Filtered Order + Hoverable "?" info button
+        FlowLayout filterRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        filterRow.verticalAlignment(VerticalAlignment.CENTER);
+        filterRow.margins(Insets.bottom(4));
+
         String filteredStr = result.jumpFiltered ? 
-            String.format("$%,.2f (⚠ Outlier Jump Filtered)", result.highestFilteredPrice) : 
+            String.format("$%,.2f (Outlier Jump Filtered)", result.highestFilteredPrice) : 
             String.format("$%,.2f", result.highestFilteredPrice);
         LabelComponent filterLbl = UIComponents.label(Component.literal("Biggest Filtered Order: " + filteredStr));
-        filterLbl.color(Color.ofRgb(result.jumpFiltered ? 0xF59E0B : 0x9CA3AF)).margins(Insets.bottom(4));
-        modalCard.child(filterLbl);
+        filterLbl.color(Color.ofRgb(result.jumpFiltered ? 0xF59E0B : 0x9CA3AF)).margins(Insets.right(6));
+        filterRow.child(filterLbl);
+
+        ButtonComponent infoBtn = UIComponents.button(Component.literal("?"), b -> {});
+        infoBtn.sizing(Sizing.fixed(16), Sizing.fixed(14));
+
+        // Build top 10 hover tooltip
+        List<Component> tooltipText = new ArrayList<>();
+        tooltipText.add(Component.literal("§e§lTop 10 Orders Found:"));
+        List<com.dsmp.profitcalc.client.handler.AutoOrderHandler.OrderListing> top10 = result.calcResult.top10Listings;
+        if (top10 != null && !top10.isEmpty()) {
+            int rank = 1;
+            for (com.dsmp.profitcalc.client.handler.AutoOrderHandler.OrderListing listing : top10) {
+                String colorCode = "§f"; // default white
+                String note = "";
+                if (listing.isFiltered) {
+                    colorCode = "§c"; // red for filtered outliers
+                    note = " (Filtered Outlier)";
+                } else if (listing.isPicked) {
+                    colorCode = "§a"; // green for picked highest
+                    note = " (Highest Valid)";
+                }
+
+                String line = String.format("%s#%d: $%,.2f each (Delivered: %d/%d)%s",
+                        colorCode, rank, listing.price, listing.deliveredQty, listing.totalQty, note);
+                tooltipText.add(Component.literal(line));
+                rank++;
+            }
+        } else {
+            tooltipText.add(Component.literal("§7No order listings found."));
+        }
+        infoBtn.tooltip(tooltipText);
+        filterRow.child(infoBtn);
+
+        modalCard.child(filterRow);
 
         LabelComponent targetPriceLbl = UIComponents.label(Component.literal("Your Unit Price: $" + DEC_FMT.format(result.calcResult.targetPrice) + " (+$" + DEC_FMT.format(result.offset) + ")"));
         targetPriceLbl.color(Color.ofRgb(0x3B82F6)).margins(Insets.bottom(4));
@@ -1578,20 +1616,15 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout actionRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         actionRow.horizontalAlignment(HorizontalAlignment.CENTER);
 
-        ButtonComponent confirmBtn = UIComponents.button(Component.literal("✔ Confirm & Place Order"), b -> {
+        ButtonComponent confirmBtn = UIComponents.button(Component.literal("Confirm"), b -> {
             closeSettingsModal();
             Minecraft.getInstance().setScreen(null);
-            if (Minecraft.getInstance().player != null) {
-                String rawCmd = String.format("order %s %d %.2f", result.itemStr, result.amount, result.calcResult.targetPrice);
-                Minecraft.getInstance().player.connection.sendCommand(rawCmd);
-                Minecraft.getInstance().player.displayClientMessage(Component.literal("§a[Auto Order] Sent command: /" + rawCmd), false);
-            }
         });
-        confirmBtn.sizing(Sizing.fill(68), Sizing.fixed(22));
+        confirmBtn.sizing(Sizing.fill(60), Sizing.fixed(22));
         confirmBtn.margins(Insets.right(6));
 
         ButtonComponent cancelBtn = UIComponents.button(Component.literal("Cancel"), b -> closeSettingsModal());
-        cancelBtn.sizing(Sizing.fill(28), Sizing.fixed(22));
+        cancelBtn.sizing(Sizing.fill(32), Sizing.fixed(22));
 
         actionRow.child(confirmBtn);
         actionRow.child(cancelBtn);

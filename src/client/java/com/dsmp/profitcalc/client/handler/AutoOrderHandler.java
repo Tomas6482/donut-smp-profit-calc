@@ -1,7 +1,6 @@
 package com.dsmp.profitcalc.client.handler;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class AutoOrderHandler {
@@ -10,6 +9,8 @@ public class AutoOrderHandler {
         public final double price;
         public final int totalQty;
         public final int deliveredQty;
+        public boolean isFiltered = false;
+        public boolean isPicked = false;
 
         public OrderListing(double price, int deliveredQty, int totalQty) {
             this.price = price;
@@ -27,12 +28,14 @@ public class AutoOrderHandler {
         public final double highestFilteredOrderPrice;
         public final boolean jumpFiltered;
         public final double totalCost;
+        public final List<OrderListing> top10Listings;
 
-        public CalculationResult(double targetPrice, double highestFilteredOrderPrice, boolean jumpFiltered, double totalCost) {
+        public CalculationResult(double targetPrice, double highestFilteredOrderPrice, boolean jumpFiltered, double totalCost, List<OrderListing> top10Listings) {
             this.targetPrice = targetPrice;
             this.highestFilteredOrderPrice = highestFilteredOrderPrice;
             this.jumpFiltered = jumpFiltered;
             this.totalCost = totalCost;
+            this.top10Listings = top10Listings;
         }
     }
 
@@ -49,7 +52,7 @@ public class AutoOrderHandler {
     public static CalculationResult calculateTargetPrice(List<OrderListing> listings, double priceAboveHighest, int requestedAmount) {
         if (listings == null || listings.isEmpty()) {
             double target = Math.max(1.0, priceAboveHighest);
-            return new CalculationResult(target, 0.0, false, target * requestedAmount);
+            return new CalculationResult(target, 0.0, false, target * requestedAmount, new ArrayList<>());
         }
 
         // Take top 10 listings
@@ -58,7 +61,7 @@ public class AutoOrderHandler {
         // Ensure sorted descending by price
         top10.sort((a, b) -> Double.compare(b.price, a.price));
 
-        OrderListing chosenListing = top10.get(0);
+        int chosenIndex = 0;
         boolean jumpFiltered = false;
 
         // Iterate top-down to check if the top listing (or subsequent high ones) is an outlier jump with <10k totalQty
@@ -72,18 +75,21 @@ public class AutoOrderHandler {
             // Filter out jump ONLY if totalQty < 10,000
             if (isJump && curr.totalQty < 10000) {
                 jumpFiltered = true;
-                // Move down to next lower listing
-                chosenListing = nextLower;
+                curr.isFiltered = true; // Mark as red filtered outlier
+                chosenIndex = i + 1;
             } else {
                 // Not a jump, or totalQty >= 10,000 -> keep this as highest valid
                 break;
             }
         }
 
+        OrderListing chosenListing = top10.get(chosenIndex);
+        chosenListing.isPicked = true; // Mark as green picked highest
+
         double highestFiltered = chosenListing.price;
         double targetPrice = Math.max(1.0, highestFiltered + priceAboveHighest);
         double totalCost = targetPrice * requestedAmount;
 
-        return new CalculationResult(targetPrice, highestFiltered, jumpFiltered, totalCost);
+        return new CalculationResult(targetPrice, highestFiltered, jumpFiltered, totalCost, top10);
     }
 }
