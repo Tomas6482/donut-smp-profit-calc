@@ -194,14 +194,14 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         tableHeader.padding(Insets.of(6)).surface(Surface.flat(0x80232936));
         tableHeader.verticalAlignment(VerticalAlignment.CENTER);
 
-        tableHeader.child(UIComponents.label(Component.literal("")).sizing(Sizing.fixed(16), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("")).sizing(Sizing.fixed(20), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Time")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Type")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(40), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Item")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(105), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Qty")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Unit Price")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(65), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Total")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(65), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Action")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(45), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Action")).color(Color.ofRgb(0x9CA3AF)).margins(Insets.left(8)).sizing(Sizing.fixed(45), Sizing.content()));
 
         rightPanel.child(tableHeader);
 
@@ -1243,11 +1243,11 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                     refreshData();
                 });
                 toggleBtn.sizing(Sizing.fixed(14), Sizing.fixed(14));
-                toggleBtn.margins(Insets.right(2));
+                toggleBtn.margins(Insets.right(6));
                 row.child(toggleBtn);
             } else {
                 LabelComponent arrowSpacer = UIComponents.label(Component.literal(""));
-                arrowSpacer.sizing(Sizing.fixed(16), Sizing.content());
+                arrowSpacer.sizing(Sizing.fixed(20), Sizing.content());
                 row.child(arrowSpacer);
             }
 
@@ -1258,6 +1258,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 refreshData();
             });
             undoRowBtn.sizing(Sizing.fixed(45), Sizing.fixed(16));
+            undoRowBtn.margins(Insets.left(8));
 
             row.child(timeLbl);
             row.child(typeLbl);
@@ -1295,6 +1296,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                         refreshData();
                     });
                     subUndoBtn.sizing(Sizing.fixed(38), Sizing.fixed(14));
+                    subUndoBtn.margins(Insets.left(8));
 
                     subRow.child(bullet);
                     subRow.child(subQtyPrice);
