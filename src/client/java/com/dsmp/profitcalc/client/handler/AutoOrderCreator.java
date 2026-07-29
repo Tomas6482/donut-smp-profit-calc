@@ -456,22 +456,64 @@ public class AutoOrderCreator {
     public static List<GuiEventListener> flattenWidgets(Screen screen) {
         List<GuiEventListener> list = new ArrayList<>();
         if (screen == null) return list;
+        java.util.Set<Object> visited = new java.util.HashSet<>();
         for (GuiEventListener child : screen.children()) {
-            collectWidgets(child, list);
+            collectWidgetsDeep(child, list, visited, 0);
         }
         return list;
     }
 
-    private static void collectWidgets(GuiEventListener element, List<GuiEventListener> list) {
-        if (element == null) return;
-        list.add(element);
-        if (element instanceof ContainerEventHandler container) {
+    private static void collectWidgetsDeep(Object obj, List<GuiEventListener> list, java.util.Set<Object> visited, int depth) {
+        if (obj == null || depth > 8 || !visited.add(obj)) return;
+
+        if (obj instanceof GuiEventListener listener) {
+            if (!list.contains(listener)) {
+                list.add(listener);
+            }
+        }
+
+        // 1. If it implements ContainerEventHandler, check children()
+        if (obj instanceof ContainerEventHandler container) {
             try {
                 for (GuiEventListener child : container.children()) {
-                    collectWidgets(child, list);
+                    collectWidgetsDeep(child, list, visited, depth + 1);
                 }
             } catch (Exception ignored) {}
         }
+
+        // 2. Deep reflection inspection of methods and fields for nested containers (e.g. ScrollableLayoutWidget.Container)
+        try {
+            Class<?> clazz = obj.getClass();
+            while (clazz != null && clazz != Object.class) {
+                // Method check
+                for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
+                    if (m.getParameterCount() == 0 && (m.getName().equals("children") || m.getName().equals("getChildren") || m.getName().equals("getWidgets"))) {
+                        m.setAccessible(true);
+                        Object result = m.invoke(obj);
+                        if (result instanceof Iterable<?> iterable) {
+                            for (Object item : iterable) {
+                                collectWidgetsDeep(item, list, visited, depth + 1);
+                            }
+                        }
+                    }
+                }
+                // Field check
+                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
+                    if (java.util.Collection.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        Object val = f.get(obj);
+                        if (val instanceof Iterable<?> iterable) {
+                            for (Object item : iterable) {
+                                if (item instanceof GuiEventListener || item instanceof AbstractWidget) {
+                                    collectWidgetsDeep(item, list, visited, depth + 1);
+                                }
+                            }
+                        }
+                    }
+                }
+                clazz = clazz.getSuperclass();
+            }
+        } catch (Exception ignored) {}
     }
 
     public static boolean hasEditBox(Screen screen) {
@@ -479,11 +521,15 @@ public class AutoOrderCreator {
     }
 
     public static EditBox findEditBox(Screen screen) {
-        for (GuiEventListener listener : flattenWidgets(screen)) {
+        List<GuiEventListener> widgets = flattenWidgets(screen);
+        for (GuiEventListener listener : widgets) {
             if (listener instanceof EditBox editBox) {
+                LOGGER.info("[Auto Order Creator] findEditBox found EditBox (val: '{}', class: {})",
+                        editBox.getValue(), editBox.getClass().getName());
                 return editBox;
             }
         }
+        LOGGER.warn("[Auto Order Creator] findEditBox returned NULL (searched {} flattened widgets)", widgets.size());
         return null;
     }
 
@@ -499,11 +545,15 @@ public class AutoOrderCreator {
                 if (listener instanceof Button button) {
                     String msg = getCleanWidgetText(button);
                     if (msg.equalsIgnoreCase(target) || msg.contains(target)) {
+                        LOGGER.info("[Auto Order Creator] findButtonByLabel matched button '{}' for target '{}' (class: {})",
+                                msg, label, button.getClass().getName());
                         return button;
                     }
                 }
             }
         }
+        LOGGER.warn("[Auto Order Creator] findButtonByLabel returned NULL for targets {} (searched {} flattened widgets)",
+                java.util.Arrays.toString(labels), widgets.size());
         return null;
     }
 
@@ -531,13 +581,18 @@ public class AutoOrderCreator {
             }
         }
 
+        LOGGER.info("[Auto Order Creator] findMatchingItemGridButton for query '{}' found {} candidates (flattened total: {})",
+                cleanQuery, candidateButtons.size(), widgets.size());
+
         if (candidateButtons.size() == 1) {
+            LOGGER.info("[Auto Order Creator] Unique item button candidate selected: '{}'", getCleanWidgetText(candidateButtons.get(0)));
             return candidateButtons.get(0);
         } else if (candidateButtons.size() > 1) {
             // Pick exact match if one exists among candidates
             for (Button b : candidateButtons) {
                 String text = getCleanWidgetText(b).toLowerCase(Locale.ROOT);
                 if (text.equals(cleanQuery)) {
+                    LOGGER.info("[Auto Order Creator] Exact match item button candidate selected: '{}'", getCleanWidgetText(b));
                     return b;
                 }
             }
@@ -560,6 +615,8 @@ public class AutoOrderCreator {
 
     public static void pressButton(Button btn) {
         if (btn == null) return;
+        LOGGER.info("[Auto Order Creator] Executing pressButton on button '{}' (class: {})",
+                getCleanWidgetText(btn), btn.getClass().getName());
         try {
             Class<?> clazz = btn.getClass();
             while (clazz != null && clazz != Object.class) {
@@ -569,9 +626,11 @@ public class AutoOrderCreator {
                         Class<?>[] pTypes = m.getParameterTypes();
                         if (pTypes.length == 0) {
                             m.invoke(btn);
+                            LOGGER.info("[Auto Order Creator] Successfully invoked onPress() [0 args] via reflection!");
                             return;
                         } else if (pTypes.length == 1) {
                             m.invoke(btn, (Object) null);
+                            LOGGER.info("[Auto Order Creator] Successfully invoked onPress(null) [1 arg] via reflection!");
                             return;
                         }
                     }
