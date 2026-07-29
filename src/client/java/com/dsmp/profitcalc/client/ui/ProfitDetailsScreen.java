@@ -207,16 +207,16 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         flipRow.margins(Insets.bottom(4));
         flipRow.verticalAlignment(VerticalAlignment.CENTER);
 
-        String activeFlipTitle;
-        switch (selectedTab) {
-            case 1: activeFlipTitle = "Kelp Flip"; break;
-            case 2: activeFlipTitle = "Oak Log Flip"; break;
-            case 3: activeFlipTitle = "Sticky Piston Flip"; break;
-            case 4: activeFlipTitle = "Golden Apple Flip"; break;
-            case 5: activeFlipTitle = "Bookshelf Flip"; break;
-            case 0:
-            default: activeFlipTitle = "Bone Flip"; break;
-        }
+        String activeFlipTitle = switch (selectedTab) {
+            case 0 -> "Bone Flip";
+            case 1 -> "Kelp Flip";
+            case 2 -> "Oak Log Flip";
+            case 3 -> "Sticky Piston Flip";
+            case 4 -> "Golden Apple Flip";
+            case 5 -> "Bookshelf Flip";
+            case 6 -> "Trapdoor Flip";
+            default -> "Bone Flip";
+        };
 
         String arrow = isDropdownOpen ? " ▲" : " ▼";
         ButtonComponent flipDropdownBtn = UIComponents.button(Component.literal("Flip: " + activeFlipTitle + arrow), btn -> {
@@ -236,7 +236,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             String[] options = {
                 "Bone Flip", "Kelp Flip", "Oak Log Flip",
-                "Sticky Piston Flip", "Golden Apple Flip", "Bookshelf Flip"
+                "Sticky Piston Flip", "Golden Apple Flip", "Bookshelf Flip", "Trapdoor Flip"
             };
 
             for (int i = 0; i < options.length; i++) {
@@ -480,6 +480,58 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             qtyInput.onChanged().subscribe(s -> { config.setSavedBonesQty(s); updateCalc(); });
             qtyInput.margins(Insets.bottom(4));
             leftPanel.child(qtyInput);
+
+        } else if (selectedTab == 6) {
+            // --- TRAPDOOR FLIP ---
+            leftPanel.child(UIComponents.label(Component.literal("Oak Log Price ($/log):")).color(Color.ofRgb(0x9CA3AF)));
+            bonePriceInput = UIComponents.textBox(Sizing.fill(100));
+            bonePriceInput.setTextColorUneditable(0xE0E0E0);
+            bonePriceInput.setMaxLength(16);
+            bonePriceInput.text(config.getSavedOakLogPrice());
+            bonePriceInput.onChanged().subscribe(s -> { config.setSavedOakLogPrice(s); updateCalc(); });
+            bonePriceInput.margins(Insets.bottom(2));
+            leftPanel.child(bonePriceInput);
+
+            leftPanel.child(UIComponents.label(Component.literal("Offset Above Baseline ($):")).color(Color.ofRgb(0x9CA3AF)));
+            targetPriceInput = UIComponents.textBox(Sizing.fill(100));
+            targetPriceInput.setTextColorUneditable(0xE0E0E0);
+            targetPriceInput.setMaxLength(16);
+            targetPriceInput.text(config.getSavedTrapdoorOffset());
+            targetPriceInput.onChanged().subscribe(s -> { config.setSavedTrapdoorOffset(s); updateCalc(); });
+            targetPriceInput.margins(Insets.bottom(2));
+            leftPanel.child(targetPriceInput);
+
+            // Stepper Control for Stack Size: [4, 8, 12, 16, 24]
+            int[] STACK_SIZES = {4, 8, 12, 16, 24};
+            int currentIdx = Math.min(STACK_SIZES.length - 1, Math.max(0, config.getSavedTrapdoorStackSizeIndex()));
+            int currentSize = STACK_SIZES[currentIdx];
+
+            leftPanel.child(UIComponents.label(Component.literal("Listing Stack Size:")).color(Color.ofRgb(0x9CA3AF)));
+            FlowLayout stepperRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.fixed(20));
+            stepperRow.verticalAlignment(VerticalAlignment.CENTER);
+
+            ButtonComponent prevBtn = UIComponents.button(Component.literal("◀"), btn -> {
+                int newIdx = Math.max(0, config.getSavedTrapdoorStackSizeIndex() - 1);
+                config.setSavedTrapdoorStackSizeIndex(newIdx);
+                Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
+            });
+            prevBtn.sizing(Sizing.fixed(24), Sizing.fixed(18));
+
+            LabelComponent sizeLabel = UIComponents.label(Component.literal(currentSize + "x Trapdoors"));
+            sizeLabel.color(Color.ofRgb(0xF59E0B)).margins(Insets.horizontal(8));
+
+            ButtonComponent nextBtn = UIComponents.button(Component.literal("▶"), btn -> {
+                int newIdx = Math.min(STACK_SIZES.length - 1, config.getSavedTrapdoorStackSizeIndex() + 1);
+                config.setSavedTrapdoorStackSizeIndex(newIdx);
+                Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
+            });
+            nextBtn.sizing(Sizing.fixed(24), Sizing.fixed(18));
+
+            stepperRow.child(prevBtn);
+            stepperRow.child(sizeLabel);
+            stepperRow.child(nextBtn);
+            stepperRow.margins(Insets.bottom(4));
+            leftPanel.child(stepperRow);
         }
 
         // Auto Check Button
@@ -491,6 +543,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 case 3: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.STICKY_PISTON); break;
                 case 4: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE); break;
                 case 5: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BOOKSHELF); break;
+                case 6: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.TRAPDOOR); break;
             }
         });
         autoCheckBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
@@ -529,7 +582,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private void updateCalc() {
-        if (bonePriceInput == null || targetPriceInput == null || qtyInput == null) return;
+        ProfitConfig config = ProfitConfig.getInstance();
+        if (bonePriceInput == null || targetPriceInput == null) return;
         try {
             double p1 = parseDouble(bonePriceInput.getValue(), 0.0);
             double p2 = parseDouble(targetPriceInput.getValue(), 0.0);
@@ -685,6 +739,83 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 calcProfitLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
 
                 calcPctLabel.text(Component.literal("Margin: " + (isPos ? "+" : "") + String.format("%.1f%%", margin)));
+                calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+
+            } else if (selectedTab == 6) {
+                // --- TRAPDOOR FLIP ---
+                double logPrice = p1; // from Oak Log Price input
+                double offset = targetPriceInput != null ? parseDouble(targetPriceInput.getValue(), 100.0) : 100.0;
+
+                int[] STACK_SIZES = {4, 8, 12, 16, 24};
+                int stackIdx = Math.min(STACK_SIZES.length - 1, Math.max(0, config.getSavedTrapdoorStackSizeIndex()));
+                int selectedStackSize = STACK_SIZES[stackIdx];
+
+                double baselineUnit = parseDouble(config.getSavedTrapdoorBaselinePrice(), -1.0);
+                double page1Ceiling = parseDouble(config.getSavedTrapdoorPage1Ceiling(), 0.0);
+
+                if (baselineUnit <= 0) {
+                    calcCostLabel.text(Component.literal("Cost/Trapdoor: " + (logPrice > 0 ? "$" + DEC_FMT.format(logPrice * 0.75) : "—")));
+                    calcOutputLabel.text(Component.literal("Baseline: Insufficient data (<3 matches)"));
+                    calcRevenueBreakevenLabel.text(Component.literal("Page-1 Ceiling: " + (page1Ceiling > 0 ? "$" + DEC_FMT.format(page1Ceiling) : "—")));
+                    calcProfitLabel.text(Component.literal("Ask Price/Unit: N/A"));
+                    calcProfitLabel.color(Color.ofRgb(0x9CA3AF));
+                    calcPctLabel.text(Component.literal("Margin: N/A (Run Auto Check)"));
+                    calcPctLabel.color(Color.ofRgb(0x9CA3AF));
+                    return;
+                }
+
+                if (logPrice <= 0) {
+                    calcCostLabel.text(Component.literal("Cost/Trapdoor: — (Enter Oak Log Price)"));
+                    calcOutputLabel.text(Component.literal("Baseline/Unit: $" + DEC_FMT.format(baselineUnit)));
+                    calcRevenueBreakevenLabel.text(Component.literal("Page-1 Ceiling: $" + DEC_FMT.format(page1Ceiling)));
+                    calcProfitLabel.text(Component.literal("Profit: N/A"));
+                    calcProfitLabel.color(Color.ofRgb(0x9CA3AF));
+                    calcPctLabel.text(Component.literal("Margin: N/A"));
+                    calcPctLabel.color(Color.ofRgb(0x9CA3AF));
+                    return;
+                }
+
+                double costPerTrapdoor = logPrice * 0.75;
+                double askPricePerUnit = Math.ceil(baselineUnit) + offset;
+
+                double logsNeeded = selectedStackSize * 0.75;
+                double totalCost = logsNeeded * logPrice;
+                double totalRevenue = askPricePerUnit * selectedStackSize;
+                double profit = totalRevenue - totalCost;
+                double marginPct = totalCost > 0 ? (profit / totalCost) * 100.0 : 0.0;
+
+                // Suggested Stack Size calculation: largest in [4, 8, 12, 16, 24] where askPricePerUnit * size < page1Ceiling
+                int suggestedSize = -1;
+                if (page1Ceiling > 0) {
+                    for (int s : STACK_SIZES) {
+                        if (askPricePerUnit * s < page1Ceiling) {
+                            suggestedSize = s;
+                        }
+                    }
+                }
+
+                String suggestionText;
+                if (page1Ceiling > 0) {
+                    if (suggestedSize > 0) {
+                        suggestionText = "Suggested: " + suggestedSize + "x (fits under $" + DEC_FMT.format(page1Ceiling) + " ceiling)";
+                    } else {
+                        double exceedBy = (askPricePerUnit * 4) - page1Ceiling;
+                        suggestionText = "⚠ Exceeds page-1 ceiling by $" + DEC_FMT.format(exceedBy);
+                    }
+                } else {
+                    suggestionText = "Page-1 Ceil: —";
+                }
+
+                calcCostLabel.text(Component.literal("Cost (" + selectedStackSize + "x): $" + DEC_FMT.format(totalCost) + " ($" + DEC_FMT.format(costPerTrapdoor) + "/ea)"));
+                calcOutputLabel.text(Component.literal("Ask/Unit: $" + DEC_FMT.format(askPricePerUnit) + " (Base: $" + DEC_FMT.format(baselineUnit) + " + $" + DEC_FMT.format(offset) + ")"));
+                calcRevenueBreakevenLabel.text(Component.literal("Rev: $" + DEC_FMT.format(totalRevenue) + " | " + suggestionText));
+
+                boolean isPos = profit >= 0;
+                String sign = isPos ? "+" : "-";
+                calcProfitLabel.text(Component.literal("Profit (" + selectedStackSize + "x): " + sign + "$" + DEC_FMT.format(Math.abs(profit))));
+                calcProfitLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+
+                calcPctLabel.text(Component.literal("Margin: " + (isPos ? "+" : "") + String.format("%.1f%%", marginPct)));
                 calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
             }
         } catch (Exception ignored) {}

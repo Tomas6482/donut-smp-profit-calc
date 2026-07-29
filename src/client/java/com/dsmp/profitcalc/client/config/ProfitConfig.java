@@ -55,6 +55,11 @@ public class ProfitConfig {
     private String savedBookPrice = "50";
     private String savedBookshelfPrice = "500";
 
+    private String savedTrapdoorOffset = "100";
+    private int savedTrapdoorStackSizeIndex = 3; // Index 3 in [4, 8, 12, 16, 24] -> default 16
+    private String savedTrapdoorBaselinePrice = "0";
+    private String savedTrapdoorPage1Ceiling = "0";
+
     public String getSavedOakLogPrice() { return savedOakLogPrice; }
     public void setSavedOakLogPrice(String val) { this.savedOakLogPrice = val; save(); }
 
@@ -84,6 +89,18 @@ public class ProfitConfig {
 
     public String getSavedBookshelfPrice() { return savedBookshelfPrice; }
     public void setSavedBookshelfPrice(String val) { this.savedBookshelfPrice = val; save(); }
+
+    public String getSavedTrapdoorOffset() { return savedTrapdoorOffset; }
+    public void setSavedTrapdoorOffset(String val) { this.savedTrapdoorOffset = val; save(); }
+
+    public int getSavedTrapdoorStackSizeIndex() { return savedTrapdoorStackSizeIndex; }
+    public void setSavedTrapdoorStackSizeIndex(int val) { this.savedTrapdoorStackSizeIndex = val; save(); }
+
+    public String getSavedTrapdoorBaselinePrice() { return savedTrapdoorBaselinePrice; }
+    public void setSavedTrapdoorBaselinePrice(String val) { this.savedTrapdoorBaselinePrice = val; save(); }
+
+    public String getSavedTrapdoorPage1Ceiling() { return savedTrapdoorPage1Ceiling; }
+    public void setSavedTrapdoorPage1Ceiling(String val) { this.savedTrapdoorPage1Ceiling = val; save(); }
 
     // Unified Configurable Command Delays (Custom Min/Max Textboxes, default 400-600ms)
     private int commandMinDelayMs = 400;

@@ -38,7 +38,8 @@ public class AutoFlipCalcHandler {
         OAK_LOG,
         STICKY_PISTON,
         GOLDEN_APPLE,
-        BOOKSHELF
+        BOOKSHELF,
+        TRAPDOOR
     }
 
     public static class Listing {
@@ -139,6 +140,11 @@ public class AutoFlipCalcHandler {
                 taskQueue.add(new ScanTask("order book", "book"));
                 taskQueue.add(new ScanTask("order bookshelf", "bookshelf"));
                 break;
+            case TRAPDOOR:
+                taskQueue.add(new ScanTask("order oak log", "oak_log"));
+                taskQueue.add(new ScanTask("ah trapdoor", "ah_trapdoor_64"));
+                taskQueue.add(new ScanTask("ah trapdoor", "ah_trapdoor_page1"));
+                break;
         }
 
         running = true;
@@ -193,6 +199,15 @@ public class AutoFlipCalcHandler {
             long delayRequired = (pagesScanned == 0) ? INITIAL_COMMAND_DELAY_MS : PAGE_TURN_DELAY_MS;
             if (now - lastActionTime < delayRequired) return;
 
+            // Page 1 ceiling task: scan Page 1 ONLY, no pagination!
+            if (currentTask.targetItemKey.equals("ah_trapdoor_page1")) {
+                scanCurrentContainer(containerScreen, currentTask.targetItemKey);
+                processAndStoreTaskResults(currentTask.targetItemKey);
+                currentTask = null;
+                lastActionTime = System.currentTimeMillis();
+                return;
+            }
+
             // Scan current page
             int matchesOnThisPage = scanCurrentContainer(containerScreen, currentTask.targetItemKey);
             int totalMatchesForTask = getAccumulatedMatchCount(currentTask.targetItemKey);
@@ -204,19 +219,19 @@ public class AutoFlipCalcHandler {
                     consecutiveEmptyPages = 0;
                 }
             } else {
-                consecutiveEmptyPages = 0; // Do NOT count empty pages before finding the 1st match!
+                consecutiveEmptyPages = 0;
             }
 
             boolean hasNextPage = isNextPageAvailable(containerScreen);
 
-            // Stop condition:
-            // If totalMatchesForTask == 0: NEVER stop early based on empty pages! Keep searching until at least 1 match is found!
-            // If totalMatchesForTask > 0: stop when totalMatchesForTask >= 3 OR consecutiveEmptyPages >= 5.
+            // Cap for 64x trapdoor scan is 9 matches (instead of 3)
+            int matchTargetCap = currentTask.targetItemKey.equals("ah_trapdoor_64") ? 9 : 3;
+
             boolean stopConditionMet;
             if (totalMatchesForTask == 0) {
                 stopConditionMet = false;
             } else {
-                stopConditionMet = (totalMatchesForTask >= 3) || (consecutiveEmptyPages >= 5);
+                stopConditionMet = (totalMatchesForTask >= matchTargetCap) || (consecutiveEmptyPages >= 5);
             }
 
             boolean shouldContinuePaging = hasNextPage && pagesScanned < MAX_PAGE_LIMIT && !stopConditionMet;
@@ -281,9 +296,30 @@ public class AutoFlipCalcHandler {
             double price = parsePriceFromStack(stack);
             if (price <= 0) continue;
 
-            double quantity = parseQuantityFromStack(stack);
+            // Part 1: For AH listings, read stack.getCount() directly (not lore parser)
+            double quantity = stack.getCount();
 
             String matchKey = null;
+
+            if (targetKey.equals("ah_trapdoor_64")) {
+                if ((path.contains("trapdoor") || name.contains("trapdoor")) && stack.getCount() == 64) {
+                    matchKey = "ah_trapdoor_64";
+                    double unitPrice = price / 64.0;
+                    accumulatedListings.computeIfAbsent(matchKey, k -> new ArrayList<>()).add(new Listing(unitPrice, 64.0));
+                    newMatchesCount++;
+                }
+                continue;
+            } else if (targetKey.equals("ah_trapdoor_page1")) {
+                if (path.contains("trapdoor") || name.contains("trapdoor")) {
+                    matchKey = "ah_trapdoor_page1";
+                    accumulatedListings.computeIfAbsent(matchKey, k -> new ArrayList<>()).add(new Listing(price, quantity));
+                    newMatchesCount++;
+                }
+                continue;
+            }
+
+            // Standard order listings quantity parsing
+            quantity = parseQuantityFromStack(stack);
 
             if (targetKey.equals("bone")) {
                 if (path.equals("bone") || name.equalsIgnoreCase("bone")) {
@@ -357,6 +393,36 @@ public class AutoFlipCalcHandler {
     }
 
     private static void processAndStoreTaskResults(String targetKey) {
+        if (targetKey.equals("ah_trapdoor_64")) {
+            List<Listing> matches = accumulatedListings.getOrDefault("ah_trapdoor_64", Collections.emptyList());
+            if (matches.size() < 3) {
+                LOGGER.warn("[Auto Flip] Insufficient data for 64x Trapdoor Baseline: found {} matches (minimum 3 required)", matches.size());
+                finalComputedPrices.put("ah_trapdoor_64", -1.0);
+            } else {
+                double sum = 0.0;
+                for (Listing l : matches) {
+                    sum += l.price; // l.price is pricePerUnit
+                }
+                double avgUnitBaseline = sum / matches.size();
+                finalComputedPrices.put("ah_trapdoor_64", avgUnitBaseline);
+                LOGGER.info("[Auto Flip] Summary for 64x Trapdoor Baseline:");
+                LOGGER.info("  Matched 64x Listings ({}) : {}", matches.size(), matches);
+                LOGGER.info("  Baseline Price/Unit       : ${}", String.format("%.2f", avgUnitBaseline));
+            }
+            return;
+        } else if (targetKey.equals("ah_trapdoor_page1")) {
+            List<Listing> matches = accumulatedListings.getOrDefault("ah_trapdoor_page1", Collections.emptyList());
+            double maxCeiling = 0.0;
+            for (Listing l : matches) {
+                maxCeiling = Math.max(maxCeiling, l.price);
+            }
+            finalComputedPrices.put("ah_trapdoor_page1", maxCeiling);
+            LOGGER.info("[Auto Flip] Summary for Trapdoor Page 1 Ceiling:");
+            LOGGER.info("  Page 1 Listings ({})      : {}", matches.size(), matches);
+            LOGGER.info("  Page 1 Max Ceiling Total  : ${}", String.format("%.2f", maxCeiling));
+            return;
+        }
+
         List<String> keysToProcess = new ArrayList<>();
         if (targetKey.equals("kelp")) {
             keysToProcess.add("raw_kelp");
@@ -459,6 +525,9 @@ public class AutoFlipCalcHandler {
         Double bookP = finalComputedPrices.get("book");
         Double bookshelfP = finalComputedPrices.get("bookshelf");
 
+        Double trapdoorBaselineP = finalComputedPrices.get("ah_trapdoor_64");
+        Double trapdoorCeilingP = finalComputedPrices.get("ah_trapdoor_page1");
+
         if (boneP != null && boneP > 0) config.setSavedBonePrice(DEC_FMT.format(boneP));
         if (blockP != null && blockP > 0) config.setSavedBlockPrice(DEC_FMT.format(blockP));
 
@@ -480,6 +549,13 @@ public class AutoFlipCalcHandler {
         if (bookP != null && bookP > 0) config.setSavedBookPrice(DEC_FMT.format(bookP));
         if (bookshelfP != null && bookshelfP > 0) config.setSavedBookshelfPrice(DEC_FMT.format(bookshelfP));
 
+        if (trapdoorBaselineP != null) {
+            config.setSavedTrapdoorBaselinePrice(trapdoorBaselineP > 0 ? DEC_FMT.format(trapdoorBaselineP) : "-1");
+        }
+        if (trapdoorCeilingP != null) {
+            config.setSavedTrapdoorPage1Ceiling(trapdoorCeilingP > 0 ? DEC_FMT.format(trapdoorCeilingP) : "0");
+        }
+
         int targetTab = 0;
         switch (activeMode) {
             case BONE: targetTab = 0; break;
@@ -488,6 +564,7 @@ public class AutoFlipCalcHandler {
             case STICKY_PISTON: targetTab = 3; break;
             case GOLDEN_APPLE: targetTab = 4; break;
             case BOOKSHELF: targetTab = 5; break;
+            case TRAPDOOR: targetTab = 6; break;
         }
 
         final int tabIdx = targetTab;
