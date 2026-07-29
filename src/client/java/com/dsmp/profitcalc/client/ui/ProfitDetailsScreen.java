@@ -1343,6 +1343,16 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         modalCard.child(modalHeader);
         modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
 
+        ButtonComponent autoOrderOpt = UIComponents.button(
+            Component.literal("📦 Auto Order"),
+            b -> {
+                closeSettingsModal();
+                openAutoOrderSetupModal();
+            }
+        );
+        autoOrderOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
+        autoOrderOpt.margins(Insets.vertical(2));
+
         ButtonComponent bestDealOpt = UIComponents.button(
             Component.literal("🔍 Best Deal Finder"),
             b -> {
@@ -1363,6 +1373,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
         dumperOpt.margins(Insets.vertical(2));
 
+        modalCard.child(autoOrderOpt);
         modalCard.child(bestDealOpt);
         modalCard.child(dumperOpt);
 
@@ -1421,6 +1432,164 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             optBtn.margins(Insets.vertical(1));
             modalCard.child(optBtn);
         }
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
+    }
+
+    public void openAutoOrderSetupModal() {
+        if (uiAdapter == null) return;
+        closeSettingsModal();
+
+        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(320), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
+                .padding(Insets.of(12));
+
+        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Auto Order Setup"));
+        modalTitle.color(Color.ofRgb(0xF59E0B));
+
+        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
+        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
+        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+        closeSpacer.child(closeBtn);
+
+        modalHeader.child(modalTitle);
+        modalHeader.child(closeSpacer);
+        modalCard.child(modalHeader);
+        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+
+        // Item Input Field
+        LabelComponent itemLbl = UIComponents.label(Component.literal("Item (ID/Name, e.g. oak_log, quartz_block):"));
+        itemLbl.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(4, 0, 2, 0));
+        modalCard.child(itemLbl);
+
+        TextBoxComponent itemInput = UIComponents.textBox(Sizing.fill(100));
+        itemInput.text("oak_log");
+        itemInput.margins(Insets.bottom(6));
+        modalCard.child(itemInput);
+
+        // Amount Input Field
+        LabelComponent amtLbl = UIComponents.label(Component.literal("Amount (e.g. 1000, 10k):"));
+        amtLbl.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(2, 0, 2, 0));
+        modalCard.child(amtLbl);
+
+        TextBoxComponent amtInput = UIComponents.textBox(Sizing.fill(100));
+        amtInput.text("1000");
+        amtInput.margins(Insets.bottom(6));
+        modalCard.child(amtInput);
+
+        // Offset Price Input Field (default $5)
+        LabelComponent offsetLbl = UIComponents.label(Component.literal("Price Above Highest Order ($):"));
+        offsetLbl.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(2, 0, 2, 0));
+        modalCard.child(offsetLbl);
+
+        TextBoxComponent offsetInput = UIComponents.textBox(Sizing.fill(100));
+        offsetInput.text("5");
+        offsetInput.margins(Insets.bottom(10));
+        modalCard.child(offsetInput);
+
+        ButtonComponent scanBtn = UIComponents.button(Component.literal("🔍 Check Order Prices"), b -> {
+            String itemStr = itemInput.getValue().trim();
+            int amount = (int) parseDouble(amtInput.getValue(), 1000);
+            double offset = parseDouble(offsetInput.getValue(), 5.0);
+
+            if (itemStr.isEmpty()) {
+                if (Minecraft.getInstance().player != null) {
+                    Minecraft.getInstance().player.displayClientMessage(Component.literal("§c[Auto Order] Please enter an item name!"), true);
+                }
+                return;
+            }
+
+            closeSettingsModal();
+            Minecraft.getInstance().setScreen(null);
+            com.dsmp.profitcalc.client.handler.AutoOrderRunner.start(itemStr, amount, offset, this::openAutoOrderConfirmModal);
+        });
+        scanBtn.sizing(Sizing.fill(100), Sizing.fixed(22));
+        modalCard.child(scanBtn);
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
+    }
+
+    public void openAutoOrderConfirmModal(com.dsmp.profitcalc.client.handler.AutoOrderRunner.OrderRunResult result) {
+        if (uiAdapter == null) return;
+        closeSettingsModal();
+
+        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(340), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFF10B981)))
+                .padding(Insets.of(12));
+
+        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("📦 Auto Order Confirmation"));
+        modalTitle.color(Color.ofRgb(0x10B981));
+
+        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
+        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
+        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+        closeSpacer.child(closeBtn);
+
+        modalHeader.child(modalTitle);
+        modalHeader.child(closeSpacer);
+        modalCard.child(modalHeader);
+        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+
+        LabelComponent itemLbl = UIComponents.label(Component.literal("Item: " + result.itemStr));
+        itemLbl.color(Color.ofRgb(0xF3F4F6)).margins(Insets.bottom(4));
+        modalCard.child(itemLbl);
+
+        LabelComponent amtLbl = UIComponents.label(Component.literal("Quantity: " + DEC_FMT.format(result.amount) + "x"));
+        amtLbl.color(Color.ofRgb(0xD1D5DB)).margins(Insets.bottom(4));
+        modalCard.child(amtLbl);
+
+        String filteredStr = result.jumpFiltered ? 
+            String.format("$%,.2f (⚠ Outlier Jump Filtered)", result.highestFilteredPrice) : 
+            String.format("$%,.2f", result.highestFilteredPrice);
+        LabelComponent filterLbl = UIComponents.label(Component.literal("Biggest Filtered Order: " + filteredStr));
+        filterLbl.color(Color.ofRgb(result.jumpFiltered ? 0xF59E0B : 0x9CA3AF)).margins(Insets.bottom(4));
+        modalCard.child(filterLbl);
+
+        LabelComponent targetPriceLbl = UIComponents.label(Component.literal("Your Unit Price: $" + DEC_FMT.format(result.calcResult.targetPrice) + " (+$" + DEC_FMT.format(result.offset) + ")"));
+        targetPriceLbl.color(Color.ofRgb(0x3B82F6)).margins(Insets.bottom(4));
+        modalCard.child(targetPriceLbl);
+
+        LabelComponent totalCostLbl = UIComponents.label(Component.literal("Total Order Cost: $" + DEC_FMT.format(result.calcResult.totalCost)));
+        totalCostLbl.color(Color.ofRgb(0x10B981)).margins(Insets.bottom(10));
+        modalCard.child(totalCostLbl);
+
+        FlowLayout actionRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        actionRow.horizontalAlignment(HorizontalAlignment.CENTER);
+
+        ButtonComponent confirmBtn = UIComponents.button(Component.literal("✔ Confirm & Place Order"), b -> {
+            closeSettingsModal();
+            Minecraft.getInstance().setScreen(null);
+            if (Minecraft.getInstance().player != null) {
+                String rawCmd = String.format("order %s %d %.2f", result.itemStr, result.amount, result.calcResult.targetPrice);
+                Minecraft.getInstance().player.connection.sendCommand(rawCmd);
+                Minecraft.getInstance().player.displayClientMessage(Component.literal("§a[Auto Order] Sent command: /" + rawCmd), false);
+            }
+        });
+        confirmBtn.sizing(Sizing.fill(68), Sizing.fixed(22));
+        confirmBtn.margins(Insets.right(6));
+
+        ButtonComponent cancelBtn = UIComponents.button(Component.literal("Cancel"), b -> closeSettingsModal());
+        cancelBtn.sizing(Sizing.fill(28), Sizing.fixed(22));
+
+        actionRow.child(confirmBtn);
+        actionRow.child(cancelBtn);
+        modalCard.child(actionRow);
 
         activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);

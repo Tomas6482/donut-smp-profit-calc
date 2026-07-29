@@ -116,6 +116,7 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 				com.dsmp.profitcalc.client.dumper.PriceDumperHandler.stop();
 				AutoFlipCalcHandler.stop();
 				com.dsmp.profitcalc.client.handler.BestDealFinderHandler.stop();
+				com.dsmp.profitcalc.client.handler.AutoOrderRunner.stop();
 				if (client.player != null) {
 					client.player.closeContainer();
 					client.player.displayClientMessage(Component.literal("§c[Donut Profit] Force stopped active search & scan!"), true);
@@ -125,6 +126,7 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 			AutoFlipCalcHandler.onTick(client);
 			com.dsmp.profitcalc.client.dumper.PriceDumperHandler.onTick(client);
 			com.dsmp.profitcalc.client.handler.BestDealFinderHandler.onTick(client);
+			com.dsmp.profitcalc.client.handler.AutoOrderRunner.onTick(client);
 		});
 
 		// 6. Register /profit Client Commands
