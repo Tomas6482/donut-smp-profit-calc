@@ -30,7 +30,7 @@ public class AutoFlipCalcHandler {
     private static final long INITIAL_COMMAND_DELAY_MS = 350;
     private static final long PAGE_TURN_DELAY_MS = 300;
     private static final long TIMEOUT_LIMIT_MS = 15000;
-    private static final int MAX_PAGE_LIMIT = 15;
+    private static final int MAX_PAGE_LIMIT = 20;
 
     public enum FlipMode {
         BONE,
@@ -195,28 +195,41 @@ public class AutoFlipCalcHandler {
 
             // Scan current page
             int matchesOnThisPage = scanCurrentContainer(containerScreen, currentTask.targetItemKey);
-
-            if (matchesOnThisPage > 0) {
-                consecutiveEmptyPages = 0;
-            } else {
-                consecutiveEmptyPages++;
-            }
-
             int totalMatchesForTask = getAccumulatedMatchCount(currentTask.targetItemKey);
 
+            if (totalMatchesForTask > 0) {
+                if (matchesOnThisPage == 0) {
+                    consecutiveEmptyPages++;
+                } else {
+                    consecutiveEmptyPages = 0;
+                }
+            } else {
+                consecutiveEmptyPages = 0; // Do NOT count empty pages before finding the 1st match!
+            }
+
             boolean hasNextPage = isNextPageAvailable(containerScreen);
-            // Require at least 3 matching orders, but stop if 5 consecutive empty pages occur
-            boolean shouldContinuePaging = hasNextPage && pagesScanned < MAX_PAGE_LIMIT && totalMatchesForTask < 3 && consecutiveEmptyPages < 5;
+
+            // Stop condition:
+            // If totalMatchesForTask == 0: NEVER stop early based on empty pages! Keep searching until at least 1 match is found!
+            // If totalMatchesForTask > 0: stop when totalMatchesForTask >= 3 OR consecutiveEmptyPages >= 5.
+            boolean stopConditionMet;
+            if (totalMatchesForTask == 0) {
+                stopConditionMet = false;
+            } else {
+                stopConditionMet = (totalMatchesForTask >= 3) || (consecutiveEmptyPages >= 5);
+            }
+
+            boolean shouldContinuePaging = hasNextPage && pagesScanned < MAX_PAGE_LIMIT && !stopConditionMet;
 
             if (shouldContinuePaging) {
                 pagesScanned++;
                 lastActionTime = now;
                 int containerId = containerScreen.getMenu().containerId;
                 mc.gameMode.handleInventoryMouseClick(containerId, 53, 0, ClickType.PICKUP, mc.player);
-                LOGGER.info("[Auto Flip] Paging forward for /{} (Page {}, Total Matches: {}, Consecutive Empty Pages: {})...",
+                LOGGER.info("[Auto Flip] Paging forward for /{} (Page {}, Total Matches: {}, Empty Pages After Match: {})...",
                         currentTask.command, pagesScanned + 1, totalMatchesForTask, consecutiveEmptyPages);
             } else {
-                LOGGER.info("[Auto Flip] Finishing scan for /{} after {} pages. Total Matches: {}, Empty Pages: {}",
+                LOGGER.info("[Auto Flip] Finishing scan for /{} after {} pages. Total Matches: {}, Empty Pages After Match: {}",
                         currentTask.command, pagesScanned + 1, totalMatchesForTask, consecutiveEmptyPages);
                 processAndStoreTaskResults(currentTask.targetItemKey);
                 currentTask = null;
