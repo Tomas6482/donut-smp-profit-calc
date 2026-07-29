@@ -117,6 +117,7 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 				AutoFlipCalcHandler.stop();
 				com.dsmp.profitcalc.client.handler.BestDealFinderHandler.stop();
 				com.dsmp.profitcalc.client.handler.AutoOrderRunner.stop();
+				com.dsmp.profitcalc.client.handler.AutoOrderCreator.stop();
 				if (client.player != null) {
 					client.player.closeContainer();
 					client.player.displayClientMessage(Component.literal("§c[Donut Profit] Force stopped active search & scan!"), true);
@@ -127,6 +128,7 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 			com.dsmp.profitcalc.client.dumper.PriceDumperHandler.onTick(client);
 			com.dsmp.profitcalc.client.handler.BestDealFinderHandler.onTick(client);
 			com.dsmp.profitcalc.client.handler.AutoOrderRunner.onTick(client);
+			com.dsmp.profitcalc.client.handler.AutoOrderCreator.onTick(client);
 		});
 
 		// 6. Register /profit Client Commands
@@ -167,6 +169,17 @@ public class DonutSmpProfitCalcClient implements ClientModInitializer {
 						});
 						return 1;
 					}))
+					.then(ClientCommandManager.literal("order-create-test")
+						.then(ClientCommandManager.argument("item", com.mojang.brigadier.arguments.StringArgumentType.string())
+						.then(ClientCommandManager.argument("amount", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+						.then(ClientCommandManager.argument("price", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.01))
+						.executes(context -> {
+							String item = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "item");
+							int amt = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "amount");
+							double price = com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(context, "price");
+							Minecraft.getInstance().execute(() -> com.dsmp.profitcalc.client.handler.AutoOrderCreator.start(item, amt, price));
+							return 1;
+						})))))
 			);
 		});
 

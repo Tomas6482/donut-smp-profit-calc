@@ -1630,6 +1630,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         ButtonComponent confirmBtn = UIComponents.button(Component.literal("Confirm"), b -> {
             closeSettingsModal();
             Minecraft.getInstance().setScreen(null);
+            com.dsmp.profitcalc.client.handler.AutoOrderCreator.start(result.itemStr, result.amount, result.calcResult.targetPrice);
         });
         confirmBtn.sizing(Sizing.fill(60), Sizing.fixed(22));
         confirmBtn.margins(Insets.right(6));
