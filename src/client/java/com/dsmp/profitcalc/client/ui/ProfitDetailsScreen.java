@@ -1565,11 +1565,22 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         filterRow.verticalAlignment(VerticalAlignment.CENTER);
         filterRow.margins(Insets.bottom(4));
 
-        String filteredStr = result.jumpFiltered ? 
+        boolean higherOrderFiltered = false;
+        if (result.calcResult.top10Listings != null) {
+            for (com.dsmp.profitcalc.client.handler.AutoOrderHandler.OrderListing listing : result.calcResult.top10Listings) {
+                if (listing.isPicked) break; // Reached the picked highest order
+                if (listing.isFiltered) {
+                    higherOrderFiltered = true;
+                    break;
+                }
+            }
+        }
+
+        String filteredStr = higherOrderFiltered ? 
             String.format("$%,.2f (Filtered)", result.highestFilteredPrice) : 
             String.format("$%,.2f", result.highestFilteredPrice);
         LabelComponent filterLbl = UIComponents.label(Component.literal("Biggest Order: " + filteredStr));
-        filterLbl.color(Color.ofRgb(result.jumpFiltered ? 0xF59E0B : 0x9CA3AF)).margins(Insets.right(6));
+        filterLbl.color(Color.ofRgb(higherOrderFiltered ? 0xF59E0B : 0x9CA3AF)).margins(Insets.right(6));
         filterRow.child(filterLbl);
 
         ButtonComponent infoBtn = UIComponents.button(Component.literal("?"), b -> {});
