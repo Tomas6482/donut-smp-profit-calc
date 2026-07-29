@@ -27,15 +27,12 @@ import io.wispforest.owo.ui.core.Color;
 import io.wispforest.owo.ui.core.HorizontalAlignment;
 import io.wispforest.owo.ui.core.Insets;
 import io.wispforest.owo.ui.core.OwoUIAdapter;
-import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
 import io.wispforest.owo.ui.core.Surface;
 import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
@@ -44,11 +41,12 @@ import java.util.Locale;
 
 public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("DonutProfit");
     private static final NumberFormat CURRENCY_FORMAT = NumberFormat.getCurrencyInstance(Locale.US);
     private static final DecimalFormat DEC_FMT = new DecimalFormat("#,##0.##");
 
     public static int selectedTab = -1; // -1 means load from config
+    private static boolean isDropdownOpen = false;
+    private static boolean isToolsDropdownOpen = false;
 
     private FlowLayout mainCard;
     private FlowLayout leftPanel;
@@ -56,12 +54,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private LabelComponent gainedValueLabel;
     private LabelComponent spentValueLabel;
     private LabelComponent netProfitValueLabel;
-
     private OverlayContainer<FlowLayout> activeOverlayModal;
-    private FlowLayout activeModalCard;
-    private boolean isDraggingModal = false;
-    private double dragOffsetX = 0;
-    private double dragOffsetY = 0;
 
     // Calculator UI Components
     private TextBoxComponent bonePriceInput;
@@ -232,10 +225,6 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         ProfitConfig config = ProfitConfig.getInstance();
 
         // 1. Flip Selection Dropdown Button
-        FlowLayout flipRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-        flipRow.margins(Insets.bottom(4));
-        flipRow.verticalAlignment(VerticalAlignment.CENTER);
-
         String activeFlipTitle = switch (selectedTab) {
             case 0 -> "Bone Flip";
             case 1 -> "Kelp Flip";
@@ -246,6 +235,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             case 6 -> "Trapdoor Flip";
             default -> "Bone Flip";
         };
+
+        FlowLayout flipRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        flipRow.margins(Insets.bottom(4));
+        flipRow.verticalAlignment(VerticalAlignment.CENTER);
 
         ButtonComponent flipDropdownBtn = UIComponents.button(Component.literal("Flip: " + activeFlipTitle + " ▾"), btn -> openFlipDropdownModal());
         flipDropdownBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
@@ -890,8 +883,6 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         modalHeader.child(closeSpacer);
         modalCard.child(modalHeader);
 
-        makeDraggable(modalCard, modalHeader);
-
         LabelComponent hudLabel = UIComponents.label(Component.literal("HUD Position Presets:"));
         hudLabel.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(8, 0, 4, 0));
         modalCard.child(hudLabel);
@@ -1013,11 +1004,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         recordAhCb.margins(Insets.bottom(4));
         modalCard.child(recordAhCb);
 
-        activeModalCard = modalCard;
-        if (ProfitConfig.getInstance().getModalX() >= 0 && ProfitConfig.getInstance().getModalY() >= 0) {
-            activeModalCard.positioning(Positioning.absolute(ProfitConfig.getInstance().getModalX(), ProfitConfig.getInstance().getModalY()));
-        }
-        activeOverlayModal = UIContainers.overlay(activeModalCard);
+        activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
@@ -1026,53 +1013,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         if (activeOverlayModal != null && uiAdapter != null) {
             uiAdapter.rootComponent.removeChild(activeOverlayModal);
             activeOverlayModal = null;
-            activeModalCard = null;
-            isDraggingModal = false;
         }
-    }
-
-    private void makeDraggable(FlowLayout modalCard, FlowLayout modalHeader) {
-        modalHeader.mouseDown().subscribe((event, doubleClick) -> {
-            if (event.button() == 0) {
-                isDraggingModal = true;
-                return true;
-            }
-            return false;
-        });
-
-        modalHeader.mouseDrag().subscribe((event, deltaX, deltaY) -> {
-            if (isDraggingModal && activeModalCard != null) {
-                int newX = Math.max(0, activeModalCard.x() + (int) deltaX);
-                int newY = Math.max(0, activeModalCard.y() + (int) deltaY);
-
-                activeModalCard.positioning(Positioning.absolute(newX, newY));
-                if (uiAdapter != null) {
-                    uiAdapter.inflateAndMount();
-                }
-                return true;
-            }
-            return false;
-        });
-
-        modalCard.mouseUp().subscribe(event -> {
-            if (isDraggingModal && activeModalCard != null && event.button() == 0) {
-                isDraggingModal = false;
-                int finalX = activeModalCard.x();
-                int finalY = activeModalCard.y();
-                ProfitConfig.getInstance().setModalX(finalX);
-                ProfitConfig.getInstance().setModalY(finalY);
-
-                LOGGER.info("[DONUT PROFIT/UI] Modal moved to position: ({}, {})", finalX, finalY);
-                if (Minecraft.getInstance().player != null) {
-                    Minecraft.getInstance().player.displayClientMessage(
-                        Component.literal("§e[DONUT PROFIT/UI] Modal moved to position: (" + finalX + ", " + finalY + ")"),
-                        true
-                    );
-                }
-                return true;
-            }
-            return false;
-        });
     }
 
     private void applyTheme(int colorHex) {
@@ -1379,14 +1320,14 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
 
-        activeModalCard = UIContainers.verticalFlow(Sizing.fixed(220), Sizing.content());
-        activeModalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
-                .padding(Insets.of(10));
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(200), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
+                .padding(Insets.of(12));
 
         FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         modalHeader.verticalAlignment(VerticalAlignment.CENTER);
 
-        LabelComponent modalTitle = UIComponents.label(Component.literal("Tools Menu ≡ (Drag to Move)"));
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Tools Menu"));
         modalTitle.color(Color.ofRgb(0xF59E0B));
 
         FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
@@ -1397,10 +1338,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         modalHeader.child(modalTitle);
         modalHeader.child(closeSpacer);
-        activeModalCard.child(modalHeader);
-        activeModalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
-
-        makeDraggable(activeModalCard, modalHeader);
+        modalCard.child(modalHeader);
+        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
 
         ButtonComponent bestDealOpt = UIComponents.button(
             Component.literal("🔍 Best Deal Finder"),
@@ -1422,14 +1361,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
         dumperOpt.margins(Insets.vertical(2));
 
-        activeModalCard.child(bestDealOpt);
-        activeModalCard.child(dumperOpt);
+        modalCard.child(bestDealOpt);
+        modalCard.child(dumperOpt);
 
-        if (ProfitConfig.getInstance().getModalX() >= 0 && ProfitConfig.getInstance().getModalY() >= 0) {
-            activeModalCard.positioning(Positioning.absolute(ProfitConfig.getInstance().getModalX(), ProfitConfig.getInstance().getModalY()));
-        }
-
-        activeOverlayModal = UIContainers.overlay(activeModalCard);
+        activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
@@ -1440,14 +1375,14 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
 
-        activeModalCard = UIContainers.verticalFlow(Sizing.fixed(220), Sizing.content());
-        activeModalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
-                .padding(Insets.of(10));
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(220), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
+                .padding(Insets.of(12));
 
         FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         modalHeader.verticalAlignment(VerticalAlignment.CENTER);
 
-        LabelComponent modalTitle = UIComponents.label(Component.literal("Select Flip Calculator ≡ (Drag to Move)"));
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Select Flip Calculator"));
         modalTitle.color(Color.ofRgb(0xF59E0B));
 
         FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
@@ -1458,10 +1393,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         modalHeader.child(modalTitle);
         modalHeader.child(closeSpacer);
-        activeModalCard.child(modalHeader);
-        activeModalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
-
-        makeDraggable(activeModalCard, modalHeader);
+        modalCard.child(modalHeader);
+        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
 
         String[] options = {
             "Bone Flip", "Kelp Flip", "Oak Log Flip",
@@ -1484,14 +1417,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             );
             optBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
             optBtn.margins(Insets.vertical(1));
-            activeModalCard.child(optBtn);
+            modalCard.child(optBtn);
         }
 
-        if (ProfitConfig.getInstance().getModalX() >= 0 && ProfitConfig.getInstance().getModalY() >= 0) {
-            activeModalCard.positioning(Positioning.absolute(ProfitConfig.getInstance().getModalX(), ProfitConfig.getInstance().getModalY()));
-        }
-
-        activeOverlayModal = UIContainers.overlay(activeModalCard);
+        activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
@@ -1574,11 +1503,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         actionRow.child(viewResultsBtn);
         modalCard.child(actionRow);
 
-        activeModalCard = modalCard;
-        if (ProfitConfig.getInstance().getModalX() >= 0 && ProfitConfig.getInstance().getModalY() >= 0) {
-            activeModalCard.positioning(Positioning.absolute(ProfitConfig.getInstance().getModalX(), ProfitConfig.getInstance().getModalY()));
-        }
-        activeOverlayModal = UIContainers.overlay(activeModalCard);
+        activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
