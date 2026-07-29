@@ -200,12 +200,13 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout tableHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         tableHeader.padding(Insets.of(6)).surface(Surface.flat(0x80232936));
 
-        tableHeader.child(UIComponents.label(Component.literal("Type")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(45), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Item")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(120), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Qty")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(40), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Unit Price")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(75), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Total")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(75), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Action")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Time")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Type")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(40), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Item")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(110), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Qty")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Unit Price")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(70), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Total")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(70), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Action")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(45), Sizing.content()));
 
         rightPanel.child(tableHeader);
 
@@ -1124,6 +1125,55 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         }
     }
 
+    private static class CollapsedTransactionEntry {
+        public final List<Transaction> transactions = new ArrayList<>();
+        public String itemName;
+        public TransactionType type;
+        public int totalAmount;
+        public double totalPrice;
+        public boolean isAh;
+
+        public CollapsedTransactionEntry(Transaction first) {
+            this.itemName = first.getItemName();
+            this.type = first.getType();
+            this.transactions.add(first);
+            this.totalAmount = first.getAmount();
+            this.totalPrice = first.getTotalPrice();
+            this.isAh = first.getItemName().equalsIgnoreCase("N/A") || first.getItemName().equalsIgnoreCase("Auction") || first.getAmount() == 1;
+        }
+
+        public boolean canMergeWith(Transaction next) {
+            if (next.getType() != this.type) return false;
+            if (!next.getItemName().equalsIgnoreCase(this.itemName)) return false;
+            return true;
+        }
+
+        public void merge(Transaction next) {
+            this.transactions.add(next);
+            this.totalAmount += next.getAmount();
+            this.totalPrice += next.getTotalPrice();
+        }
+
+        public double getEffectiveUnitPrice() {
+            return totalAmount > 0 ? (totalPrice / (double) totalAmount) : totalPrice;
+        }
+
+        public String getFormattedQty() {
+            int salesCount = transactions.size();
+            if (isAh) {
+                return salesCount > 1 ? "AH (" + salesCount + "x)" : "AH";
+            }
+            if (salesCount > 1) {
+                return totalAmount + "x (" + salesCount + "x)";
+            }
+            return String.valueOf(totalAmount);
+        }
+
+        public String getLatestFormattedTime() {
+            return transactions.get(0).getFormattedTime();
+        }
+    }
+
     private void refreshData() {
         ProfitTracker tracker = ProfitTracker.getInstance();
 
@@ -1145,36 +1195,60 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             return;
         }
 
-        int rowIdx = 0;
+        List<CollapsedTransactionEntry> collapsedList = new ArrayList<>();
+        CollapsedTransactionEntry currentEntry = null;
+
         for (Transaction tx : list) {
+            if (currentEntry == null) {
+                currentEntry = new CollapsedTransactionEntry(tx);
+            } else if (currentEntry.canMergeWith(tx)) {
+                currentEntry.merge(tx);
+            } else {
+                collapsedList.add(currentEntry);
+                currentEntry = new CollapsedTransactionEntry(tx);
+            }
+        }
+        if (currentEntry != null) {
+            collapsedList.add(currentEntry);
+        }
+
+        int rowIdx = 0;
+        for (CollapsedTransactionEntry entry : collapsedList) {
             FlowLayout row = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-            row.padding(Insets.of(4, 6, 4, 6));
+            row.padding(Insets.of(4, 4, 4, 4));
 
             int bg = (rowIdx % 2 == 0) ? 0x40181C24 : 0x2011141A;
             row.surface(Surface.flat(bg));
 
-            boolean isSell = tx.getType() == TransactionType.SELL;
+            boolean isSell = entry.type == TransactionType.SELL;
+
+            LabelComponent timeLbl = UIComponents.label(Component.literal(entry.getLatestFormattedTime()));
+            timeLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content());
+
             LabelComponent typeLbl = UIComponents.label(Component.literal(isSell ? "SELL" : "BUY"));
-            typeLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(45), Sizing.content());
+            typeLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(40), Sizing.content());
 
-            LabelComponent itemLbl = UIComponents.label(Component.literal(tx.getItemName()));
-            itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(120), Sizing.content());
+            LabelComponent itemLbl = UIComponents.label(Component.literal(entry.itemName));
+            itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(110), Sizing.content());
 
-            LabelComponent amtLbl = UIComponents.label(Component.literal(String.valueOf(tx.getAmount())));
-            amtLbl.color(Color.ofRgb(0xD1D5DB)).sizing(Sizing.fixed(40), Sizing.content());
+            LabelComponent amtLbl = UIComponents.label(Component.literal(entry.getFormattedQty()));
+            amtLbl.color(Color.ofRgb(0xD1D5DB)).sizing(Sizing.fixed(50), Sizing.content());
 
-            LabelComponent unitLbl = UIComponents.label(Component.literal(CURRENCY_FORMAT.format(tx.getPricePerItem())));
-            unitLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(75), Sizing.content());
+            LabelComponent unitLbl = UIComponents.label(Component.literal(CURRENCY_FORMAT.format(entry.getEffectiveUnitPrice())));
+            unitLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(70), Sizing.content());
 
-            LabelComponent totalLbl = UIComponents.label(Component.literal((isSell ? "+" : "-") + CURRENCY_FORMAT.format(tx.getTotalPrice())));
-            totalLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(75), Sizing.content());
+            LabelComponent totalLbl = UIComponents.label(Component.literal((isSell ? "+" : "-") + CURRENCY_FORMAT.format(entry.totalPrice)));
+            totalLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(70), Sizing.content());
 
             ButtonComponent undoRowBtn = UIComponents.button(Component.literal("Undo"), btn -> {
-                ProfitTracker.getInstance().removeTransaction(tx);
+                for (Transaction t : entry.transactions) {
+                    ProfitTracker.getInstance().removeTransaction(t);
+                }
                 refreshData();
             });
-            undoRowBtn.sizing(Sizing.fixed(50), Sizing.fixed(16));
+            undoRowBtn.sizing(Sizing.fixed(45), Sizing.fixed(16));
 
+            row.child(timeLbl);
             row.child(typeLbl);
             row.child(itemLbl);
             row.child(amtLbl);
