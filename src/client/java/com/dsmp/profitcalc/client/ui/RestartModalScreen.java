@@ -20,11 +20,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.lang.management.ManagementFactory;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class RestartModalScreen extends BaseOwoScreen<FlowLayout> {
 
@@ -79,8 +78,9 @@ public class RestartModalScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     /**
-     * Restarts Minecraft by reconstructing the full JVM launch command.
-     * Works on both Linux and Windows with launchers like Prism/MultiMC.
+     * Restarts Minecraft by detecting the launcher and re-launching through it.
+     * Works on both Linux and Windows with PrismLauncher / MultiMC.
+     * Falls back to just shutting down if restart isn't possible.
      */
     public static void restartGame() {
         Minecraft mc = Minecraft.getInstance();
@@ -90,7 +90,9 @@ public class RestartModalScreen extends BaseOwoScreen<FlowLayout> {
                 LOGGER.info("[Donut Restart] Launching restart command: {}", String.join(" ", cmd));
                 ProcessBuilder builder = new ProcessBuilder(cmd);
                 builder.directory(new File(System.getProperty("user.dir")));
-                builder.inheritIO();
+                // Detach the child process so it outlives us
+                builder.redirectErrorStream(true);
+                builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
                 builder.start();
 
                 LOGGER.info("[Donut Restart] New process launched, shutting down current instance...");
@@ -111,65 +113,136 @@ public class RestartModalScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     /**
-     * Reconstructs the full JVM launch command from the current running process.
-     * Uses /proc/self/cmdline on Linux, and ProcessHandle + RuntimeMXBean on Windows.
+     * Detects the launcher (PrismLauncher/MultiMC) and builds a command to
+     * re-launch the current instance through it.
      */
     private static List<String> buildRestartCommand() {
-        // Method 1: On Linux, read /proc/self/cmdline (most reliable)
-        try {
-            Path cmdlinePath = Path.of("/proc/self/cmdline");
-            if (Files.exists(cmdlinePath)) {
-                byte[] bytes = Files.readAllBytes(cmdlinePath);
-                String full = new String(bytes);
-                String[] args = full.split("\0");
-                if (args.length > 0) {
-                    List<String> cmd = new ArrayList<>(List.of(args));
-                    LOGGER.info("[Donut Restart] Built command from /proc/self/cmdline ({} args)", cmd.size());
-                    return cmd;
-                }
+        String nativesPath = System.getProperty("java.library.path", "");
+        String os = System.getProperty("os.name", "").toLowerCase();
+
+        // --- Detect PrismLauncher ---
+        // Native library path looks like: .../PrismLauncher/instances/<name>/natives
+        String instanceName = extractPrismInstanceName(nativesPath);
+        if (instanceName != null) {
+            LOGGER.info("[Donut Restart] Detected PrismLauncher instance: '{}'", instanceName);
+
+            // Find the prismlauncher executable
+            String launcherExe = findPrismLauncher(os);
+            if (launcherExe != null) {
+                List<String> cmd = new ArrayList<>();
+                cmd.add(launcherExe);
+                cmd.add("--launch");
+                cmd.add(instanceName);
+                LOGGER.info("[Donut Restart] Built PrismLauncher restart command: {}", cmd);
+                return cmd;
+            } else {
+                LOGGER.warn("[Donut Restart] PrismLauncher instance detected but could not find launcher executable");
             }
-        } catch (Exception e) {
-            LOGGER.warn("[Donut Restart] Failed to read /proc/self/cmdline: {}", e.getMessage());
         }
 
-        // Method 2: Use RuntimeMXBean (cross-platform fallback for Windows)
-        try {
-            String javaHome = System.getProperty("java.home");
-            String os = System.getProperty("os.name", "").toLowerCase();
-            String javaBin = javaHome + File.separator + "bin" + File.separator + (os.contains("win") ? "javaw.exe" : "java");
-
-            List<String> cmd = new ArrayList<>();
-            cmd.add(javaBin);
-
-            // Add all JVM arguments (like -Xmx, -XX:, -D, etc.)
-            List<String> jvmArgs = ManagementFactory.getRuntimeMXBean().getInputArguments();
-            cmd.addAll(jvmArgs);
-
-            // Add classpath
-            String classpath = System.getProperty("java.class.path");
-            if (classpath != null && !classpath.isEmpty()) {
-                cmd.add("-cp");
-                cmd.add(classpath);
-            }
-
-            // Add main class and program arguments
-            String sunCommand = System.getProperty("sun.java.command");
-            if (sunCommand != null && !sunCommand.isEmpty()) {
-                // sun.java.command contains main class + args separated by spaces
-                String[] parts = sunCommand.split("\\s+");
-                for (String part : parts) {
-                    cmd.add(part);
-                }
-            }
-
-            if (cmd.size() > 1) {
-                LOGGER.info("[Donut Restart] Built command from RuntimeMXBean ({} args)", cmd.size());
+        // --- Detect MultiMC ---
+        // Native library path looks like: .../MultiMC/instances/<name>/natives
+        String multiMcInstance = extractMultiMcInstanceName(nativesPath);
+        if (multiMcInstance != null) {
+            LOGGER.info("[Donut Restart] Detected MultiMC instance: '{}'", multiMcInstance);
+            String launcherExe = findMultiMc(os);
+            if (launcherExe != null) {
+                List<String> cmd = new ArrayList<>();
+                cmd.add(launcherExe);
+                cmd.add("--launch");
+                cmd.add(multiMcInstance);
                 return cmd;
             }
-        } catch (Exception e) {
-            LOGGER.error("[Donut Restart] Failed to build command from RuntimeMXBean", e);
         }
 
+        LOGGER.warn("[Donut Restart] Could not detect launcher. Restart not supported — will just shut down.");
         return null;
+    }
+
+    /**
+     * Extracts the Prism instance name from the java.library.path.
+     * Pattern: .../PrismLauncher/instances/<name>/natives
+     */
+    private static String extractPrismInstanceName(String nativesPath) {
+        // Handle both forward and backslashes
+        Pattern pattern = Pattern.compile("PrismLauncher[/\\\\]instances[/\\\\]([^/\\\\]+)[/\\\\]natives");
+        Matcher matcher = pattern.matcher(nativesPath);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the MultiMC instance name from the java.library.path.
+     */
+    private static String extractMultiMcInstanceName(String nativesPath) {
+        Pattern pattern = Pattern.compile("MultiMC[/\\\\]instances[/\\\\]([^/\\\\]+)[/\\\\]natives");
+        Matcher matcher = pattern.matcher(nativesPath);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    /**
+     * Finds the PrismLauncher executable on the system.
+     */
+    private static String findPrismLauncher(String os) {
+        if (os.contains("win")) {
+            // Check common Windows locations
+            String[] candidates = {
+                    System.getenv("LOCALAPPDATA") + "\\Programs\\PrismLauncher\\prismlauncher.exe",
+                    System.getenv("PROGRAMFILES") + "\\PrismLauncher\\prismlauncher.exe",
+                    "prismlauncher.exe" // hope it's on PATH
+            };
+            for (String path : candidates) {
+                if (path != null && new File(path).exists()) return path;
+            }
+            // Last resort: just try the name and hope it's on PATH
+            return "prismlauncher.exe";
+        } else {
+            // Linux: check common locations
+            String[] candidates = {
+                    "/usr/bin/prismlauncher",
+                    "/usr/local/bin/prismlauncher",
+                    System.getProperty("user.home") + "/.local/bin/prismlauncher",
+                    "/usr/share/PrismLauncher/prismlauncher",
+                    "/app/bin/prismlauncher" // Flatpak
+            };
+            for (String path : candidates) {
+                if (new File(path).exists()) return path;
+            }
+            // Also try the Flatpak command
+            try {
+                Process p = new ProcessBuilder("which", "prismlauncher").start();
+                p.waitFor();
+                if (p.exitValue() == 0) {
+                    String result = new String(p.getInputStream().readAllBytes()).trim();
+                    if (!result.isEmpty()) return result;
+                }
+            } catch (Exception ignored) {}
+
+            // Fallback: just use the name
+            return "prismlauncher";
+        }
+    }
+
+    /**
+     * Finds the MultiMC executable on the system.
+     */
+    private static String findMultiMc(String os) {
+        if (os.contains("win")) {
+            return "MultiMC.exe";
+        } else {
+            String[] candidates = {
+                    "/usr/bin/multimc",
+                    "/usr/local/bin/multimc"
+            };
+            for (String path : candidates) {
+                if (new File(path).exists()) return path;
+            }
+            return "multimc";
+        }
     }
 }
