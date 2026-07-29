@@ -53,6 +53,7 @@ public class AutoOrderCreator {
 
     private static long stateStartTime = 0;
     private static int stateTicks = 0;
+    private static int retryCount = 0; // Automatic retry counter (max 3 retries)
     private static Screen lastClickedItemScreen = null; // used to detect screen change after clicking item
 
     public static void start(String itemName, int amount, double pricePerItem) {
@@ -74,6 +75,7 @@ public class AutoOrderCreator {
         targetAmount = amount;
         targetPrice = pricePerItem;
         lastClickedItemScreen = null;
+        retryCount = 0;
 
         state = State.OPEN_ORDER_GUI;
         stateStartTime = System.currentTimeMillis();
@@ -114,8 +116,22 @@ public class AutoOrderCreator {
         if (state != State.IDLE && state != State.FINISHED && state != State.FAILED) {
             if (stateTicks > 240 || (now - stateStartTime > 12000)) {
                 LOGGER.warn("[Auto Order Creator] Timed out in state: {} (ticks={}, elapsed={}ms)", state, stateTicks, now - stateStartTime);
-                fail("Server lag timeout in step " + state.name() + " (took >12s)");
-                return;
+                if (retryCount < 3) {
+                    retryCount++;
+                    LOGGER.info("[Auto Order Creator] Retrying order creation flow (attempt {}/3)...", retryCount);
+                    notifyUser("§e[Auto Order] Lag timeout in step " + state.name() + ". Retrying (" + retryCount + "/3)...");
+                    if (mc.player != null) {
+                        mc.player.closeContainer();
+                        mc.player.connection.sendCommand("order");
+                    }
+                    state = State.OPEN_ORDER_GUI;
+                    stateStartTime = now;
+                    stateTicks = 0;
+                    return;
+                } else {
+                    fail("Server lag timeout in step " + state.name() + " (failed after 3 retries)");
+                    return;
+                }
             }
         }
 
@@ -264,7 +280,7 @@ public class AutoOrderCreator {
             }
 
             case TYPING_AMOUNT -> {
-                if (screen != null) {
+                if (screen != null && stateTicks >= 2) { // 100ms buffer after screen opens
                     EditBox editBox = findEditBox(screen);
                     if (editBox != null) {
                         LOGGER.info("[Auto Order Creator] Setting amount '{}' in EditBox", targetAmount);
@@ -279,7 +295,7 @@ public class AutoOrderCreator {
             }
 
             case CLICKING_AMOUNT_NEXT -> {
-                if (stateTicks >= 2 && screen != null) {
+                if (stateTicks >= 3 && screen != null) { // 150ms buffer to allow text input sync
                     Button nextBtn = findButtonByLabel(screen, "Next", "Confirm", "Continue");
                     if (nextBtn != null) {
                         LOGGER.info("[Auto Order Creator] Clicking 'Next' button");
@@ -293,7 +309,11 @@ public class AutoOrderCreator {
             }
 
             case WAIT_PRICE_SCREEN -> {
-                if (screen != null) {
+                if (stateTicks % 20 == 0) {
+                    LOGGER.info("[Auto Order Creator] Still waiting for price screen — current screen: {} / title: '{}'",
+                            screen == null ? "null" : screen.getClass().getSimpleName(), getScreenTitle(screen));
+                }
+                if (screen != null && stateTicks >= 2) {
                     String title = getScreenTitle(screen);
                     if (title.contains("price") || title.contains("cost") || title.contains("per item") || hasEditBox(screen)) {
                         LOGGER.info("[Auto Order Creator] 'Price Per Item?' dialog screen detected: '{}'", title);
@@ -305,7 +325,7 @@ public class AutoOrderCreator {
             }
 
             case TYPING_PRICE -> {
-                if (screen != null) {
+                if (screen != null && stateTicks >= 2) { // 100ms buffer after price screen opens
                     EditBox editBox = findEditBox(screen);
                     if (editBox != null) {
                         String priceStr = formatPriceString(targetPrice);
@@ -321,7 +341,7 @@ public class AutoOrderCreator {
             }
 
             case CLICKING_PRICE_REVIEW -> {
-                if (stateTicks >= 2 && screen != null) {
+                if (stateTicks >= 3 && screen != null) { // 150ms buffer for price value sync
                     Button reviewBtn = findButtonByLabel(screen, "Review Order", "Review", "Next", "Confirm");
                     if (reviewBtn != null) {
                         LOGGER.info("[Auto Order Creator] Clicking 'Review Order' button");
@@ -335,7 +355,11 @@ public class AutoOrderCreator {
             }
 
             case WAIT_REVIEW_SCREEN -> {
-                if (screen != null) {
+                if (stateTicks % 20 == 0) {
+                    LOGGER.info("[Auto Order Creator] Still waiting for review screen — current screen: {} / title: '{}'",
+                            screen == null ? "null" : screen.getClass().getSimpleName(), getScreenTitle(screen));
+                }
+                if (screen != null && stateTicks >= 2) {
                     String title = getScreenTitle(screen);
                     if (title.contains("review") || title.contains("summary") || hasButtonLabel(screen, "Create Order", "Create")) {
                         LOGGER.info("[Auto Order Creator] 'Review Order' dialog screen detected: '{}'", title);
@@ -347,7 +371,7 @@ public class AutoOrderCreator {
             }
 
             case CLICKING_CREATE_ORDER -> {
-                if (stateTicks >= 1 && screen != null) {
+                if (stateTicks >= 3 && screen != null) { // 150ms buffer before finalizing
                     Button createBtn = findButtonByLabel(screen, "Create Order", "Create", "Confirm Order");
                     if (createBtn != null) {
                         LOGGER.info("[Auto Order Creator] Clicking 'Create Order' button! Finalizing order creation.");
