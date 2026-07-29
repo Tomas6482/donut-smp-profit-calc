@@ -31,6 +31,7 @@ public class AutoOrderCreator {
         CLICK_NEW_ORDER_SLOT,     // In "Orders -> Your Orders", click first "New Order" slot in 0..17
         WAIT_CHOOSE_ITEM_SCREEN,  // Waiting for "Choose Item" dialog screen
         TYPING_ITEM_SEARCH,       // In Choose Item screen, typing item into search box
+        CLICKING_SEARCH_BUTTON,   // Clicking the "Search" button below text box
         CLICKING_ITEM_BUTTON,     // Finding and clicking matching item button in grid
         WAIT_AMOUNT_SCREEN,       // Waiting for "How many?" dialog screen
         TYPING_AMOUNT,            // Setting amount in EditBox
@@ -204,6 +205,25 @@ public class AutoOrderCreator {
                         editBox.setValue(searchQuery);
                         editBox.setFocused(true);
 
+                        state = State.CLICKING_SEARCH_BUTTON;
+                        stateStartTime = now;
+                        stateTicks = 0;
+                    }
+                }
+            }
+
+            case CLICKING_SEARCH_BUTTON -> {
+                if (stateTicks >= 2 && screen != null) {
+                    Button searchBtn = findButtonByLabel(screen, "Search");
+                    if (searchBtn != null) {
+                        LOGGER.info("[Auto Order Creator] Clicking 'Search' button to filter item grid");
+                        pressButton(searchBtn);
+
+                        state = State.CLICKING_ITEM_BUTTON;
+                        stateStartTime = now;
+                        stateTicks = 0;
+                    } else {
+                        // Fallback if no Search button exists
                         state = State.CLICKING_ITEM_BUTTON;
                         stateStartTime = now;
                         stateTicks = 0;
@@ -528,7 +548,7 @@ public class AutoOrderCreator {
 
     private static boolean isControlButtonLabel(String labelText) {
         String l = labelText.toLowerCase(Locale.ROOT).trim();
-        return l.contains("cancel") || l.contains("back") || l.contains("close") ||
+        return l.equals("search") || l.contains("cancel") || l.contains("back") || l.contains("close") ||
                l.contains("next") || l.contains("previous") || l.contains("page") ||
                l.contains("review") || l.contains("create") || l.equals("✕") || l.equals("?");
     }
