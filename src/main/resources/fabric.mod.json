@@ -2,8 +2,8 @@
 	"schemaVersion": 1,
 	"id": "donut-smp-profit-calc",
 	"version": "${version}",
-	"name": "Donut Smp Profit Calc",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "DonutSMP Utils",
+	"description": "Donut SMP calc and utilities!",
 	"authors": [
 		"Me!"
 	],
