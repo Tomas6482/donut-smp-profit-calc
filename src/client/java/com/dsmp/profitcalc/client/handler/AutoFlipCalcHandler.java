@@ -30,6 +30,7 @@ public class AutoFlipCalcHandler {
     private static final long INITIAL_COMMAND_DELAY_MS = 350;
     private static final long PAGE_TURN_DELAY_MS = 300;
     private static final long TIMEOUT_LIMIT_MS = 15000;
+    private static final int MAX_PAGE_LIMIT = 15;
 
     public enum FlipMode {
         BONE,
@@ -68,6 +69,7 @@ public class AutoFlipCalcHandler {
 
     private static ScanTask currentTask = null;
     private static int pagesScanned = 0;
+    private static int consecutiveEmptyPages = 0;
     private static long lastActionTime = 0;
 
     private static final Map<String, List<Listing>> accumulatedListings = new HashMap<>();
@@ -77,6 +79,8 @@ public class AutoFlipCalcHandler {
         running = false;
         taskQueue.clear();
         currentTask = null;
+        pagesScanned = 0;
+        consecutiveEmptyPages = 0;
         accumulatedListings.clear();
         finalComputedPrices.clear();
         Minecraft mc = Minecraft.getInstance();
@@ -101,6 +105,7 @@ public class AutoFlipCalcHandler {
         taskQueue.clear();
         currentTask = null;
         pagesScanned = 0;
+        consecutiveEmptyPages = 0;
         lastActionTime = System.currentTimeMillis();
 
         accumulatedListings.clear();
@@ -161,6 +166,7 @@ public class AutoFlipCalcHandler {
 
             currentTask = taskQueue.poll();
             pagesScanned = 0;
+            consecutiveEmptyPages = 0;
             lastActionTime = now;
 
             if (mc.screen != null) {
@@ -188,22 +194,45 @@ public class AutoFlipCalcHandler {
             if (now - lastActionTime < delayRequired) return;
 
             // Scan current page
-            scanCurrentContainer(containerScreen, currentTask.targetItemKey);
+            int matchesOnThisPage = scanCurrentContainer(containerScreen, currentTask.targetItemKey);
 
-            // Pagination logic: Scan up to 3 pages total (pages 0, 1, 2)
-            if (pagesScanned < 2 && isNextPageAvailable(containerScreen)) {
+            if (matchesOnThisPage > 0) {
+                consecutiveEmptyPages = 0;
+            } else {
+                consecutiveEmptyPages++;
+            }
+
+            int totalMatchesForTask = getAccumulatedMatchCount(currentTask.targetItemKey);
+
+            boolean hasNextPage = isNextPageAvailable(containerScreen);
+            // Require at least 3 matching orders, but stop if 5 consecutive empty pages occur
+            boolean shouldContinuePaging = hasNextPage && pagesScanned < MAX_PAGE_LIMIT && totalMatchesForTask < 3 && consecutiveEmptyPages < 5;
+
+            if (shouldContinuePaging) {
                 pagesScanned++;
                 lastActionTime = now;
                 int containerId = containerScreen.getMenu().containerId;
                 mc.gameMode.handleInventoryMouseClick(containerId, 53, 0, ClickType.PICKUP, mc.player);
-                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /{}. Page count: {}", currentTask.command, pagesScanned);
+                LOGGER.info("[Auto Flip] Paging forward for /{} (Page {}, Total Matches: {}, Consecutive Empty Pages: {})...",
+                        currentTask.command, pagesScanned + 1, totalMatchesForTask, consecutiveEmptyPages);
             } else {
-                // Done scanning 3 pages or no next page available
+                LOGGER.info("[Auto Flip] Finishing scan for /{} after {} pages. Total Matches: {}, Empty Pages: {}",
+                        currentTask.command, pagesScanned + 1, totalMatchesForTask, consecutiveEmptyPages);
                 processAndStoreTaskResults(currentTask.targetItemKey);
                 currentTask = null;
                 lastActionTime = System.currentTimeMillis();
             }
         }
+    }
+
+    private static int getAccumulatedMatchCount(String targetKey) {
+        if (targetKey.equals("kelp")) {
+            int raw = accumulatedListings.getOrDefault("raw_kelp", Collections.emptyList()).size();
+            int dried = accumulatedListings.getOrDefault("dried_kelp", Collections.emptyList()).size();
+            int block = accumulatedListings.getOrDefault("dried_kelp_block", Collections.emptyList()).size();
+            return Math.max(raw, Math.max(dried, block));
+        }
+        return accumulatedListings.getOrDefault(targetKey, Collections.emptyList()).size();
     }
 
     private static boolean isNextPageAvailable(AbstractContainerScreen<?> screen) {
@@ -221,10 +250,12 @@ public class AutoFlipCalcHandler {
         return name.contains("next") || name.contains("page") || name.contains("-->") || itemId.contains("arrow");
     }
 
-    private static void scanCurrentContainer(AbstractContainerScreen<?> containerScreen, String targetKey) {
-        if (containerScreen.getMenu() == null) return;
+    private static int scanCurrentContainer(AbstractContainerScreen<?> containerScreen, String targetKey) {
+        if (containerScreen.getMenu() == null) return 0;
         List<Slot> slots = containerScreen.getMenu().slots;
-        if (slots.size() < 45) return;
+        if (slots.size() < 45) return 0;
+
+        int newMatchesCount = 0;
 
         for (int i = 0; i < Math.min(45, slots.size()); i++) {
             ItemStack stack = slots.get(i).getItem();
@@ -305,8 +336,11 @@ public class AutoFlipCalcHandler {
 
             if (matchKey != null) {
                 accumulatedListings.computeIfAbsent(matchKey, k -> new ArrayList<>()).add(new Listing(price, quantity));
+                newMatchesCount++;
             }
         }
+
+        return newMatchesCount;
     }
 
     private static void processAndStoreTaskResults(String targetKey) {
@@ -359,8 +393,7 @@ public class AutoFlipCalcHandler {
                 outlierListings.clear();
             }
 
-            // 3. CRITICAL FIX: Sort DESCENDING by price (highest buy order prices first)
-            // /order listings are buy orders offered by buyers — the HIGHEST prices are the best ones to sell into!
+            // 3. Sort DESCENDING by price (highest buy order prices first)
             filteredListings.sort((a, b) -> Double.compare(b.price, a.price));
 
             int top3Count = Math.min(3, filteredListings.size());
