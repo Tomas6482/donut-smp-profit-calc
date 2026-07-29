@@ -128,6 +128,15 @@ public class ProfitConfig {
     private int commandMaxDelayMs = 600;
     private boolean useGuiSearchBypass = true;
 
+    private int modalX = -1;
+    private int modalY = -1;
+
+    public int getModalX() { return modalX; }
+    public void setModalX(int val) { this.modalX = val; save(); }
+
+    public int getModalY() { return modalY; }
+    public void setModalY(int val) { this.modalY = val; save(); }
+
     public int getCommandMinDelayMs() { return commandMinDelayMs > 0 ? commandMinDelayMs : 400; }
     public void setCommandMinDelayMs(int ms) { this.commandMinDelayMs = Math.max(100, ms); save(); }
 
