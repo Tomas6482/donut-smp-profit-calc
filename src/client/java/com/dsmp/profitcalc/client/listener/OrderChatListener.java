@@ -41,6 +41,12 @@ public class OrderChatListener {
             Pattern.CASE_INSENSITIVE
     );
 
+    // AH Earned (Online/Offline): "You earned $9K from auction" or "You earned $67K from auction while you were away"
+    private static final Pattern AH_EARNED_CHAT_PATTERN = Pattern.compile(
+            "^you\\s+earned\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)\\s+from\\s+auction(?:\\s+while\\s+you\\s+were\\s+away)?",
+            Pattern.CASE_INSENSITIVE
+    );
+
     public void register() {
         ClientReceiveMessageEvents.GAME.register(this::onGameMessage);
     }
@@ -53,12 +59,12 @@ public class OrderChatListener {
         String text = stripColorCodes(rawText);
         String lowerText = text.toLowerCase().trim();
 
-        if (!lowerText.contains("order") && !lowerText.contains("sold") && !lowerText.contains("delivered") && !lowerText.contains("received") && !lowerText.contains("bought")) {
+        if (!lowerText.contains("order") && !lowerText.contains("sold") && !lowerText.contains("delivered") && !lowerText.contains("received") && !lowerText.contains("bought") && !lowerText.contains("earned")) {
             return;
         }
 
-        // Filter out public broadcast sales from OTHER players (must start with "You" or contain "you delivered/sold/received" or "bought your")
-        if (!lowerText.startsWith("you ") && !lowerText.contains("you delivered") && !lowerText.contains("you sold") && !lowerText.contains("you received") && !lowerText.contains("you ordered") && !lowerText.contains("created buy order") && !lowerText.contains("bought your")) {
+        // Filter out public broadcast sales from OTHER players (must start with "You" or contain "you delivered/sold/received" or "bought your" or "you earned")
+        if (!lowerText.startsWith("you ") && !lowerText.contains("you delivered") && !lowerText.contains("you sold") && !lowerText.contains("you received") && !lowerText.contains("you ordered") && !lowerText.contains("created buy order") && !lowerText.contains("bought your") && !lowerText.contains("you earned")) {
             if (ProfitConfig.getInstance().isVerboseLogging()) {
                 LOGGER.info("[DONUT PROFIT/CHAT] Ignored public broadcast message from another player: '{}'", text);
             }
@@ -240,6 +246,22 @@ public class OrderChatListener {
                         ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, pricePerItem, totalPrice));
                         if (ProfitConfig.getInstance().isVerboseLogging()) {
                             LOGGER.info("[DONUT PROFIT/CHAT] Recorded AH SELL (Buyer: {}): {} x{} @ ${}/ea (Total: ${})", buyer, item, amount, pricePerItem, totalPrice);
+                        }
+                    }
+                    return;
+                }
+            }
+
+            // Check AH EARNED Pattern ("You earned $9K from auction" or "You earned $67K from auction while you were away")
+            Matcher mAhEarned = AH_EARNED_CHAT_PATTERN.matcher(text);
+            if (mAhEarned.find()) {
+                double totalPrice = parsePrice(mAhEarned.group(1));
+                if (totalPrice > 0) {
+                    String item = "N/A";
+                    if (ProfitConfig.getInstance().isRecordAhTransactions()) {
+                        ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, 1, totalPrice, totalPrice));
+                        if (ProfitConfig.getInstance().isVerboseLogging()) {
+                            LOGGER.info("[DONUT PROFIT/CHAT] Recorded AH EARNED SELL: {} x1 @ ${} (Total: ${})", item, totalPrice, totalPrice);
                         }
                     }
                     return;
