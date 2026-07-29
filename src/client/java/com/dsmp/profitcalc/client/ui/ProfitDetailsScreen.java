@@ -67,6 +67,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private LabelComponent calcSmeltedProfitLabel;
     private LabelComponent calcSmeltedPctLabel;
 
+    private LabelComponent trapdoorAskPriceLabel;
+    private LabelComponent trapdoorPage1CeilingLabel;
+    private LabelComponent trapdoorSuggestedSizeLabel;
+
     @Override
     protected @NotNull OwoUIAdapter<FlowLayout> createAdapter() {
         return OwoUIAdapter.create(this, UIContainers::verticalFlow);
@@ -576,6 +580,15 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
             calcResultsBox.child(calcSmeltedProfitLabel);
             calcResultsBox.child(calcSmeltedPctLabel);
+        } else if (selectedTab == 6) {
+            trapdoorAskPriceLabel = UIComponents.label(Component.literal("Ask Price/Unit: —")).color(Color.ofRgb(0xF59E0B));
+            trapdoorPage1CeilingLabel = UIComponents.label(Component.literal("Page-1 Ceiling: —")).color(Color.ofRgb(0x9CA3AF));
+            trapdoorSuggestedSizeLabel = UIComponents.label(Component.literal("Suggested Stack Size: —")).color(Color.ofRgb(0x3B82F6));
+
+            calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
+            calcResultsBox.child(trapdoorAskPriceLabel);
+            calcResultsBox.child(trapdoorPage1CeilingLabel);
+            calcResultsBox.child(trapdoorSuggestedSizeLabel);
         }
 
         leftPanel.child(calcResultsBox);
@@ -587,7 +600,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         try {
             double p1 = parseDouble(bonePriceInput.getValue(), 0.0);
             double p2 = parseDouble(targetPriceInput.getValue(), 0.0);
-            double qty = parseDouble(qtyInput.getValue(), 0.0);
+            double qty = qtyInput != null ? parseDouble(qtyInput.getValue(), 0.0) : 0.0;
 
             if (selectedTab == 0) {
                 // --- BONE FLIP ---
@@ -761,17 +774,26 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                     calcProfitLabel.color(Color.ofRgb(0x9CA3AF));
                     calcPctLabel.text(Component.literal("Margin: N/A (Run Auto Check)"));
                     calcPctLabel.color(Color.ofRgb(0x9CA3AF));
+
+                    if (trapdoorAskPriceLabel != null) trapdoorAskPriceLabel.text(Component.literal("Ask Price/Unit: N/A"));
+                    if (trapdoorPage1CeilingLabel != null) trapdoorPage1CeilingLabel.text(Component.literal("Page-1 Ceiling: " + (page1Ceiling > 0 ? "$" + DEC_FMT.format(page1Ceiling) : "—")));
+                    if (trapdoorSuggestedSizeLabel != null) trapdoorSuggestedSizeLabel.text(Component.literal("Suggested Stack Size: N/A"));
                     return;
                 }
 
                 if (logPrice <= 0) {
+                    double askUnit = Math.ceil(baselineUnit) + offset;
                     calcCostLabel.text(Component.literal("Cost/Trapdoor: — (Enter Oak Log Price)"));
                     calcOutputLabel.text(Component.literal("Baseline/Unit: $" + DEC_FMT.format(baselineUnit)));
                     calcRevenueBreakevenLabel.text(Component.literal("Page-1 Ceiling: $" + DEC_FMT.format(page1Ceiling)));
-                    calcProfitLabel.text(Component.literal("Profit: N/A"));
+                    calcProfitLabel.text(Component.literal("Profit: N/A (Missing Log Price)"));
                     calcProfitLabel.color(Color.ofRgb(0x9CA3AF));
                     calcPctLabel.text(Component.literal("Margin: N/A"));
                     calcPctLabel.color(Color.ofRgb(0x9CA3AF));
+
+                    if (trapdoorAskPriceLabel != null) trapdoorAskPriceLabel.text(Component.literal("Ask Price/Unit: $" + DEC_FMT.format(askUnit)));
+                    if (trapdoorPage1CeilingLabel != null) trapdoorPage1CeilingLabel.text(Component.literal("Page-1 Ceiling: $" + DEC_FMT.format(page1Ceiling)));
+                    if (trapdoorSuggestedSizeLabel != null) trapdoorSuggestedSizeLabel.text(Component.literal("Suggested Stack Size: —"));
                     return;
                 }
 
@@ -794,29 +816,48 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                     }
                 }
 
-                String suggestionText;
-                if (page1Ceiling > 0) {
-                    if (suggestedSize > 0) {
-                        suggestionText = "Suggested: " + suggestedSize + "x (fits under $" + DEC_FMT.format(page1Ceiling) + " ceiling)";
-                    } else {
-                        double exceedBy = (askPricePerUnit * 4) - page1Ceiling;
-                        suggestionText = "⚠ Exceeds page-1 ceiling by $" + DEC_FMT.format(exceedBy);
-                    }
-                } else {
-                    suggestionText = "Page-1 Ceil: —";
-                }
+                boolean exceedsCeiling = page1Ceiling > 0 && (totalRevenue >= page1Ceiling);
 
                 calcCostLabel.text(Component.literal("Cost (" + selectedStackSize + "x): $" + DEC_FMT.format(totalCost) + " ($" + DEC_FMT.format(costPerTrapdoor) + "/ea)"));
                 calcOutputLabel.text(Component.literal("Ask/Unit: $" + DEC_FMT.format(askPricePerUnit) + " (Base: $" + DEC_FMT.format(baselineUnit) + " + $" + DEC_FMT.format(offset) + ")"));
-                calcRevenueBreakevenLabel.text(Component.literal("Rev: $" + DEC_FMT.format(totalRevenue) + " | " + suggestionText));
+
+                if (exceedsCeiling) {
+                    double exceedBy = totalRevenue - page1Ceiling;
+                    calcRevenueBreakevenLabel.text(Component.literal("Rev: $" + DEC_FMT.format(totalRevenue) + " | ⚠ Exceeds Ceil by $" + DEC_FMT.format(exceedBy)));
+                } else {
+                    calcRevenueBreakevenLabel.text(Component.literal("Rev: $" + DEC_FMT.format(totalRevenue) + " | Ceil: $" + DEC_FMT.format(page1Ceiling)));
+                }
 
                 boolean isPos = profit >= 0;
                 String sign = isPos ? "+" : "-";
                 calcProfitLabel.text(Component.literal("Profit (" + selectedStackSize + "x): " + sign + "$" + DEC_FMT.format(Math.abs(profit))));
                 calcProfitLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
 
-                calcPctLabel.text(Component.literal("Margin: " + (isPos ? "+" : "") + String.format("%.1f%%", marginPct)));
-                calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+                if (exceedsCeiling) {
+                    calcPctLabel.text(Component.literal("Margin: " + (isPos ? "+" : "") + String.format("%.1f%%", marginPct) + " (⚠ Over Ceil)"));
+                    calcPctLabel.color(Color.ofRgb(0xF59E0B));
+                } else {
+                    calcPctLabel.text(Component.literal("Margin: " + (isPos ? "+" : "") + String.format("%.1f%%", marginPct)));
+                    calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+                }
+
+                if (trapdoorAskPriceLabel != null) {
+                    trapdoorAskPriceLabel.text(Component.literal("Ask Price/Unit: $" + DEC_FMT.format(askPricePerUnit)));
+                }
+                if (trapdoorPage1CeilingLabel != null) {
+                    trapdoorPage1CeilingLabel.text(Component.literal("Page-1 Ceiling: $" + DEC_FMT.format(page1Ceiling)));
+                }
+                if (trapdoorSuggestedSizeLabel != null) {
+                    if (suggestedSize > 0) {
+                        boolean selectedMatchesSuggested = (selectedStackSize == suggestedSize);
+                        String statusText = selectedMatchesSuggested ? " (Active)" : " (Fits Ceil)";
+                        trapdoorSuggestedSizeLabel.text(Component.literal("Suggested Stack Size: " + suggestedSize + "x" + statusText));
+                        trapdoorSuggestedSizeLabel.color(Color.ofRgb(0x3B82F6));
+                    } else {
+                        trapdoorSuggestedSizeLabel.text(Component.literal("Suggested Stack Size: ⚠ None fits ceiling"));
+                        trapdoorSuggestedSizeLabel.color(Color.ofRgb(0xEF4444));
+                    }
+                }
             }
         } catch (Exception ignored) {}
     }
