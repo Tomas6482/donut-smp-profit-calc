@@ -4,6 +4,8 @@ import com.dsmp.profitcalc.client.config.ProfitConfig;
 import com.dsmp.profitcalc.client.ui.ProfitDetailsScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -11,7 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.DecimalFormat;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,43 +29,64 @@ public class AutoFlipCalcHandler {
 
     public enum FlipMode {
         BONE,
-        KELP
+        KELP,
+        OAK_LOG,
+        STICKY_PISTON,
+        GOLDEN_APPLE,
+        BOOKSHELF
     }
 
-    private enum State {
-        IDLE,
-        SCANNING_BONE_MODE,
-        SCANNING_KELP_BONE_PHASE,
-        TRANSITIONING_TO_KELP,
-        SCANNING_KELP_PHASE,
-        TRANSITIONING_TO_CHARCOAL,
-        SCANNING_CHARCOAL_PHASE
+    private static class ScanTask {
+        final String command;
+        final String targetItemKey;
+        ScanTask(String command, String targetItemKey) {
+            this.command = command;
+            this.targetItemKey = targetItemKey;
+        }
     }
 
-    private static State currentState = State.IDLE;
+    private static boolean running = false;
     public static FlipMode activeMode = FlipMode.BONE;
+    private static final Queue<ScanTask> taskQueue = new LinkedList<>();
 
-    private static double capturedBlockPrice = 0.0;
+    private static ScanTask currentTask = null;
+    private static int pagesScanned = 0;
+    private static long lastActionTime = 0;
+
+    // Captured prices
     private static double capturedBonePrice = 0.0;
+    private static double capturedBlockPrice = 0.0;
+
     private static double capturedRawKelpPrice = 0.0;
     private static double capturedDriedKelpPrice = 0.0;
     private static double capturedCharcoalPrice = 0.0;
 
-    private static int pagesScanned = 0;
-    private static long lastActionTime = 0;
+    private static double capturedOakLogPrice = 0.0;
+    private static double capturedOakPlanksPrice = 0.0;
 
-    public static double autoBonePrice = 0.0;
-    public static double autoBlockPrice = 0.0;
-    public static double autoRawKelpPrice = 0.0;
-    public static double autoDriedKelpPrice = 0.0;
-    public static double autoCharcoalPrice = 0.0;
+    private static double capturedPistonPrice = 0.0;
+    private static double capturedSlimeballPrice = 0.0;
+    private static double capturedStickyPistonPrice = 0.0;
+
+    private static double capturedGoldIngotPrice = 0.0;
+    private static double capturedApplePrice = 0.0;
+    private static double capturedGapplePrice = 0.0;
+
+    private static double capturedBookPrice = 0.0;
+    private static double capturedBookshelfPrice = 0.0;
 
     public static void stop() {
-        currentState = State.IDLE;
+        running = false;
+        taskQueue.clear();
+        currentTask = null;
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {
             mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§e[Auto Flip] Cancelled."), true);
         }
+    }
+
+    public static boolean isRunning() {
+        return running;
     }
 
     public static void start() {
@@ -73,289 +98,263 @@ public class AutoFlipCalcHandler {
         if (mc.player == null) return;
 
         activeMode = mode;
-        capturedBlockPrice = 0.0;
-        capturedBonePrice = 0.0;
-        capturedRawKelpPrice = 0.0;
-        capturedDriedKelpPrice = 0.0;
-        capturedCharcoalPrice = 0.0;
+        taskQueue.clear();
+        currentTask = null;
         pagesScanned = 0;
         lastActionTime = System.currentTimeMillis();
+
+        // Reset captured prices
+        capturedBonePrice = 0.0; capturedBlockPrice = 0.0;
+        capturedRawKelpPrice = 0.0; capturedDriedKelpPrice = 0.0; capturedCharcoalPrice = 0.0;
+        capturedOakLogPrice = 0.0; capturedOakPlanksPrice = 0.0;
+        capturedPistonPrice = 0.0; capturedSlimeballPrice = 0.0; capturedStickyPistonPrice = 0.0;
+        capturedGoldIngotPrice = 0.0; capturedApplePrice = 0.0; capturedGapplePrice = 0.0;
+        capturedBookPrice = 0.0; capturedBookshelfPrice = 0.0;
+
+        switch (mode) {
+            case BONE:
+                taskQueue.add(new ScanTask("order bone", "bone"));
+                break;
+            case KELP:
+                taskQueue.add(new ScanTask("order bone", "bone"));
+                taskQueue.add(new ScanTask("order kelp", "kelp"));
+                taskQueue.add(new ScanTask("order charcoal", "charcoal"));
+                break;
+            case OAK_LOG:
+                taskQueue.add(new ScanTask("order oak log", "oak_log"));
+                taskQueue.add(new ScanTask("order oak planks", "oak_planks"));
+                break;
+            case STICKY_PISTON:
+                taskQueue.add(new ScanTask("order piston", "piston"));
+                taskQueue.add(new ScanTask("order slimeball", "slimeball"));
+                taskQueue.add(new ScanTask("order sticky piston", "sticky_piston"));
+                break;
+            case GOLDEN_APPLE:
+                taskQueue.add(new ScanTask("order gold ingot", "gold_ingot"));
+                taskQueue.add(new ScanTask("order apple", "apple"));
+                taskQueue.add(new ScanTask("order golden apple", "golden_apple"));
+                break;
+            case BOOKSHELF:
+                taskQueue.add(new ScanTask("order oak planks", "oak_planks"));
+                taskQueue.add(new ScanTask("order book", "book"));
+                taskQueue.add(new ScanTask("order bookshelf", "bookshelf"));
+                break;
+        }
+
+        running = true;
 
         if (mc.screen != null) {
             mc.player.closeContainer();
         }
 
-        if (mode == FlipMode.BONE) {
-            currentState = State.SCANNING_BONE_MODE;
-            if (mc.player.connection != null) {
-                mc.player.connection.sendCommand("order bone");
-            }
-            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Running /order bone... Scanning prices!"), true);
-        } else {
-            currentState = State.SCANNING_KELP_BONE_PHASE;
-            if (mc.player.connection != null) {
-                mc.player.connection.sendCommand("order bone");
-            }
-            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 1/3: Running /order bone for Kelp Flip..."), true);
-        }
+        mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Auto checking prices for " + mode.name() + "..."), true);
     }
 
     public static void onTick(Minecraft mc) {
-        if (currentState == State.IDLE || mc == null || mc.player == null) return;
+        if (!running || mc == null || mc.player == null) return;
 
-        int delayMs = com.dsmp.profitcalc.client.config.ProfitConfig.getInstance().getRandomizedCommandDelayMs();
+        long now = System.currentTimeMillis();
+        int delayMs = ProfitConfig.getInstance().getRandomizedCommandDelayMs();
 
-        // Handle Transitioning to /order kelp
-        if (currentState == State.TRANSITIONING_TO_KELP) {
-            if (System.currentTimeMillis() - lastActionTime >= delayMs) {
-                currentState = State.SCANNING_KELP_PHASE;
-                pagesScanned = 0;
-                lastActionTime = System.currentTimeMillis();
-                if (mc.player.connection != null) {
-                    mc.player.connection.sendCommand("order kelp");
-                }
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 2/3: Running /order kelp for Raw & Dried Kelp..."), true);
+        if (currentTask == null) {
+            if (taskQueue.isEmpty()) {
+                finishAutoScan(mc);
+                return;
+            }
+
+            if (now - lastActionTime < delayMs) return;
+
+            currentTask = taskQueue.poll();
+            pagesScanned = 0;
+            lastActionTime = now;
+
+            if (mc.screen != null) {
+                mc.player.closeContainer();
+            }
+
+            LOGGER.info("[Auto Flip] Running /{} for item key: {}", currentTask.command, currentTask.targetItemKey);
+            if (mc.player.connection != null) {
+                mc.player.connection.sendCommand(currentTask.command);
             }
             return;
         }
 
-        // Handle Transitioning to /order charcoal
-        if (currentState == State.TRANSITIONING_TO_CHARCOAL) {
-            if (System.currentTimeMillis() - lastActionTime >= delayMs) {
-                currentState = State.SCANNING_CHARCOAL_PHASE;
-                pagesScanned = 0;
-                lastActionTime = System.currentTimeMillis();
-                if (mc.player.connection != null) {
-                    mc.player.connection.sendCommand("order charcoal");
-                }
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§a[Auto Flip] Step 3/3: Running /order charcoal for Smelting cost..."), true);
-            }
-            return;
-        }
-
-        // Timeout check (15s max)
-        if (System.currentTimeMillis() - lastActionTime > TIMEOUT_LIMIT_MS) {
-            currentState = State.IDLE;
-            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§c[Auto Flip] Timed out waiting for /order response."), true);
+        // Timeout check (15s max per command step)
+        if (now - lastActionTime > TIMEOUT_LIMIT_MS) {
+            LOGGER.warn("[Auto Flip] Step timed out for /{}", currentTask.command);
+            currentTask = null;
+            lastActionTime = now + 200;
             return;
         }
 
         if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
-            String title = containerScreen.getTitle() != null ? containerScreen.getTitle().getString().toLowerCase() : "";
-
             long delayRequired = (pagesScanned == 0) ? INITIAL_COMMAND_DELAY_MS : PAGE_TURN_DELAY_MS;
-            if (System.currentTimeMillis() - lastActionTime < delayRequired) return;
+            if (now - lastActionTime < delayRequired) return;
 
-            if (currentState == State.SCANNING_BONE_MODE) {
-                if (title.contains("orders") || title.contains("bone")) {
-                    scanBoneContainer(mc, containerScreen, false);
-                }
-            } else if (currentState == State.SCANNING_KELP_BONE_PHASE) {
-                if (title.contains("orders") || title.contains("bone")) {
-                    scanBoneContainer(mc, containerScreen, true);
-                }
-            } else if (currentState == State.SCANNING_KELP_PHASE) {
-                if (title.contains("orders") || title.contains("kelp")) {
-                    scanKelpContainer(mc, containerScreen);
-                }
-            } else if (currentState == State.SCANNING_CHARCOAL_PHASE) {
-                if (title.contains("orders") || title.contains("charcoal")) {
-                    scanCharcoalContainer(mc, containerScreen);
-                }
+            boolean scannedAny = scanCurrentContainer(mc, containerScreen, currentTask.targetItemKey);
+
+            if (scannedAny || pagesScanned >= 3) {
+                currentTask = null;
+                lastActionTime = System.currentTimeMillis();
+                return;
+            }
+
+            // Next Page if available
+            List<Slot> slots = containerScreen.getMenu().slots;
+            if (pagesScanned < 3 && slots.size() > 53 && !slots.get(53).getItem().isEmpty()) {
+                pagesScanned++;
+                lastActionTime = now;
+                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
+                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /{}. Page count: {}", currentTask.command, pagesScanned);
+            } else {
+                currentTask = null;
+                lastActionTime = System.currentTimeMillis();
             }
         }
     }
 
-    private static void scanBoneContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen, boolean isKelpMode) {
-        if (containerScreen.getMenu() == null) return;
+    private static boolean scanCurrentContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen, String targetKey) {
+        if (containerScreen.getMenu() == null) return false;
         List<Slot> slots = containerScreen.getMenu().slots;
-        if (slots.size() < 54) return;
+        if (slots.size() < 45) return false;
 
-        // 1. Grab Bone Block price from slot #0 on page 1 if not captured yet
-        if (capturedBlockPrice <= 0 && !slots.get(0).getItem().isEmpty()) {
-            ItemStack stack0 = slots.get(0).getItem();
-            capturedBlockPrice = parsePriceFromStack(stack0);
-            if (capturedBlockPrice > 0) {
-                LOGGER.info("[Auto Flip] Captured Bone Block Price from slot #0: ${}/ea", capturedBlockPrice);
-            }
-        }
+        boolean foundTarget = false;
 
-        // 2. Scan current page slots 0..44 for single Bone order
         for (int i = 0; i < Math.min(45, slots.size()); i++) {
             ItemStack stack = slots.get(i).getItem();
             if (stack.isEmpty()) continue;
-            String itemName = stack.getHoverName().getString().trim();
 
-            if (itemName.equalsIgnoreCase("Bone") || (itemName.toLowerCase().contains("bone") && !itemName.toLowerCase().contains("block"))) {
-                double price = parsePriceFromStack(stack);
-                if (price > 0) {
+            Identifier loc = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            String path = (loc != null) ? loc.getPath().toLowerCase() : "";
+            String name = stack.getHoverName().getString().trim().toLowerCase();
+
+            double price = parsePriceFromStack(stack);
+            if (price <= 0) continue;
+
+            if (targetKey.equals("bone")) {
+                if (path.equals("bone") || name.equalsIgnoreCase("bone")) {
                     capturedBonePrice = price;
-                    LOGGER.info("[Auto Flip] Captured Single Bone Price from slot #{}: ${}/ea", i, capturedBonePrice);
-
-                    if (isKelpMode) {
-                        advanceToKelpPhase(mc);
-                    } else {
-                        finishAutoScan(mc);
-                    }
-                    return;
+                    foundTarget = true;
+                } else if (path.equals("bone_block") || name.contains("bone block")) {
+                    capturedBlockPrice = price;
                 }
-            }
-        }
-
-        // 3. Next Page
-        if (pagesScanned < 5) {
-            Slot nextSlot = slots.get(53);
-            if (nextSlot != null && !nextSlot.getItem().isEmpty()) {
-                pagesScanned++;
-                lastActionTime = System.currentTimeMillis();
-                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
-                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53). Page count: {}", pagesScanned);
-                return;
-            }
-        }
-
-        if (isKelpMode) {
-            advanceToKelpPhase(mc);
-        } else {
-            finishAutoScan(mc);
-        }
-    }
-
-    private static void advanceToKelpPhase(Minecraft mc) {
-        if (mc.player != null) {
-            mc.player.closeContainer();
-        }
-        currentState = State.TRANSITIONING_TO_KELP;
-        lastActionTime = System.currentTimeMillis();
-    }
-
-    private static void scanKelpContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen) {
-        if (containerScreen.getMenu() == null) return;
-        List<Slot> slots = containerScreen.getMenu().slots;
-        if (slots.size() < 54) return;
-
-        // Scan slots 0..44 for Raw Kelp vs Dried Kelp Block
-        for (int i = 0; i < Math.min(45, slots.size()); i++) {
-            ItemStack stack = slots.get(i).getItem();
-            if (stack.isEmpty()) continue;
-            String itemName = stack.getHoverName().getString().trim().toLowerCase();
-
-            if (itemName.contains("dried kelp block") || (itemName.contains("dried") && itemName.contains("kelp"))) {
-                double price = parsePriceFromStack(stack);
-                if (price > capturedDriedKelpPrice) {
-                    capturedDriedKelpPrice = price;
+            } else if (targetKey.equals("kelp")) {
+                if (path.equals("dried_kelp_block") || name.contains("dried kelp block")) {
+                    if (price > capturedDriedKelpPrice) capturedDriedKelpPrice = price;
+                    foundTarget = true;
+                } else if (path.equals("kelp") || name.contains("kelp")) {
+                    if (price > capturedRawKelpPrice) capturedRawKelpPrice = price;
+                    foundTarget = true;
                 }
-            } else if (itemName.contains("kelp")) {
-                double price = parsePriceFromStack(stack);
-                if (price > capturedRawKelpPrice) {
-                    capturedRawKelpPrice = price;
-                }
-            }
-        }
-
-        // If both or either captured, advance to Charcoal
-        if (capturedDriedKelpPrice > 0 || capturedRawKelpPrice > 0 || pagesScanned >= 3) {
-            advanceToCharcoalPhase(mc);
-            return;
-        }
-
-        // Next Page
-        if (pagesScanned < 5) {
-            Slot nextSlot = slots.get(53);
-            if (nextSlot != null && !nextSlot.getItem().isEmpty()) {
-                pagesScanned++;
-                lastActionTime = System.currentTimeMillis();
-                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
-                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /order kelp. Page count: {}", pagesScanned);
-                return;
-            }
-        }
-
-        advanceToCharcoalPhase(mc);
-    }
-
-    private static void advanceToCharcoalPhase(Minecraft mc) {
-        if (mc.player != null) {
-            mc.player.closeContainer();
-        }
-        currentState = State.TRANSITIONING_TO_CHARCOAL;
-        lastActionTime = System.currentTimeMillis();
-    }
-
-    private static void scanCharcoalContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen) {
-        if (containerScreen.getMenu() == null) return;
-        List<Slot> slots = containerScreen.getMenu().slots;
-        if (slots.size() < 54) return;
-
-        for (int i = 0; i < Math.min(45, slots.size()); i++) {
-            ItemStack stack = slots.get(i).getItem();
-            if (stack.isEmpty()) continue;
-            String itemName = stack.getHoverName().getString().trim().toLowerCase();
-
-            if (itemName.contains("charcoal") || itemName.equalsIgnoreCase("charcoal")) {
-                double price = parsePriceFromStack(stack);
-                if (price > 0) {
+            } else if (targetKey.equals("charcoal")) {
+                if (path.equals("charcoal") || name.contains("charcoal")) {
                     capturedCharcoalPrice = price;
-                    finishAutoScan(mc);
-                    return;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("oak_log")) {
+                if (path.equals("oak_log") || name.contains("oak log")) {
+                    capturedOakLogPrice = price;
+                    foundTarget = true;
+                } else if (path.equals("oak_planks") || name.contains("oak planks")) {
+                    capturedOakPlanksPrice = price;
+                }
+            } else if (targetKey.equals("oak_planks")) {
+                if (path.equals("oak_planks") || name.contains("oak planks")) {
+                    capturedOakPlanksPrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("piston")) {
+                if (path.equals("piston") || name.contains("piston")) {
+                    capturedPistonPrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("slimeball")) {
+                if (path.equals("slime_ball") || path.equals("slimeball") || name.contains("slimeball") || name.contains("slime ball")) {
+                    capturedSlimeballPrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("sticky_piston")) {
+                if (path.equals("sticky_piston") || name.contains("sticky piston")) {
+                    capturedStickyPistonPrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("gold_ingot")) {
+                if (path.equals("gold_ingot") || name.contains("gold ingot")) {
+                    capturedGoldIngotPrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("apple")) {
+                if (path.equals("apple") || name.equals("apple")) {
+                    capturedApplePrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("golden_apple")) {
+                if (path.equals("golden_apple") || name.contains("golden apple")) {
+                    capturedGapplePrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("book")) {
+                if (path.equals("book") || name.equals("book")) {
+                    capturedBookPrice = price;
+                    foundTarget = true;
+                }
+            } else if (targetKey.equals("bookshelf")) {
+                if (path.equals("bookshelf") || name.contains("bookshelf")) {
+                    capturedBookshelfPrice = price;
+                    foundTarget = true;
                 }
             }
         }
 
-        // Next Page
-        if (pagesScanned < 3) {
-            Slot nextSlot = slots.get(53);
-            if (nextSlot != null && !nextSlot.getItem().isEmpty()) {
-                pagesScanned++;
-                lastActionTime = System.currentTimeMillis();
-                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
-                LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /order charcoal. Page count: {}", pagesScanned);
-                return;
-            }
-        }
-
-        finishAutoScan(mc);
+        return foundTarget;
     }
 
     private static void finishAutoScan(Minecraft mc) {
-        currentState = State.IDLE;
+        running = false;
+        currentTask = null;
+        ProfitConfig config = ProfitConfig.getInstance();
 
-        if (capturedBonePrice > 0) {
-            autoBonePrice = capturedBonePrice;
-            ProfitConfig.getInstance().setSavedBonePrice(DEC_FMT.format(autoBonePrice));
-        }
-        if (capturedBlockPrice > 0) {
-            autoBlockPrice = capturedBlockPrice;
-            ProfitConfig.getInstance().setSavedBlockPrice(DEC_FMT.format(autoBlockPrice));
-        }
-        if (capturedRawKelpPrice > 0) {
-            autoRawKelpPrice = capturedRawKelpPrice;
-            ProfitConfig.getInstance().setSavedRawKelpPrice(DEC_FMT.format(autoRawKelpPrice));
-        }
-        if (capturedDriedKelpPrice > 0) {
-            autoDriedKelpPrice = capturedDriedKelpPrice;
-            ProfitConfig.getInstance().setSavedDriedKelpPrice(DEC_FMT.format(autoDriedKelpPrice));
-        }
-        if (capturedCharcoalPrice > 0) {
-            autoCharcoalPrice = capturedCharcoalPrice;
-            ProfitConfig.getInstance().setSavedCharcoalPrice(DEC_FMT.format(autoCharcoalPrice));
+        if (capturedBonePrice > 0) config.setSavedBonePrice(DEC_FMT.format(capturedBonePrice));
+        if (capturedBlockPrice > 0) config.setSavedBlockPrice(DEC_FMT.format(capturedBlockPrice));
+
+        if (capturedRawKelpPrice > 0) config.setSavedRawKelpPrice(DEC_FMT.format(capturedRawKelpPrice));
+        if (capturedDriedKelpPrice > 0) config.setSavedDriedKelpPrice(DEC_FMT.format(capturedDriedKelpPrice));
+        if (capturedCharcoalPrice > 0) config.setSavedCharcoalPrice(DEC_FMT.format(capturedCharcoalPrice));
+
+        if (capturedOakLogPrice > 0) config.setSavedOakLogPrice(DEC_FMT.format(capturedOakLogPrice));
+        if (capturedOakPlanksPrice > 0) config.setSavedOakPlanksPrice(DEC_FMT.format(capturedOakPlanksPrice));
+
+        if (capturedPistonPrice > 0) config.setSavedPistonPrice(DEC_FMT.format(capturedPistonPrice));
+        if (capturedSlimeballPrice > 0) config.setSavedSlimeballPrice(DEC_FMT.format(capturedSlimeballPrice));
+        if (capturedStickyPistonPrice > 0) config.setSavedStickyPistonPrice(DEC_FMT.format(capturedStickyPistonPrice));
+
+        if (capturedGoldIngotPrice > 0) config.setSavedGoldIngotPrice(DEC_FMT.format(capturedGoldIngotPrice));
+        if (capturedApplePrice > 0) config.setSavedApplePrice(DEC_FMT.format(capturedApplePrice));
+        if (capturedGapplePrice > 0) config.setSavedGapplePrice(DEC_FMT.format(capturedGapplePrice));
+
+        if (capturedBookPrice > 0) config.setSavedBookPrice(DEC_FMT.format(capturedBookPrice));
+        if (capturedBookshelfPrice > 0) config.setSavedBookshelfPrice(DEC_FMT.format(capturedBookshelfPrice));
+
+        int targetTab = 0;
+        switch (activeMode) {
+            case BONE: targetTab = 0; break;
+            case KELP: targetTab = 1; break;
+            case OAK_LOG: targetTab = 2; break;
+            case STICKY_PISTON: targetTab = 3; break;
+            case GOLDEN_APPLE: targetTab = 4; break;
+            case BOOKSHELF: targetTab = 5; break;
         }
 
+        final int tabIdx = targetTab;
         if (mc.player != null) {
             mc.player.closeContainer();
-            if (activeMode == FlipMode.BONE) {
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                        String.format("§a[Auto Flip] Success! Bone: $%.2f | Block: $%.2f", autoBonePrice, autoBlockPrice)), true);
-            } else {
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                        String.format("§a[Auto Flip] Success! Bone: $%.2f | Raw Kelp: $%.2f | Dried Kelp: $%.2f | Charcoal: $%.2f",
-                                autoBonePrice, autoRawKelpPrice, autoDriedKelpPrice, autoCharcoalPrice)), true);
-            }
+            mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§a[Auto Flip] Auto check complete for " + activeMode.name() + "! Prices updated."), true);
         }
 
         mc.execute(() -> {
-            ProfitDetailsScreen.selectedTab = (activeMode == FlipMode.KELP) ? 1 : 0;
-            ProfitConfig.getInstance().setSavedSelectedTab(ProfitDetailsScreen.selectedTab);
+            ProfitDetailsScreen.selectedTab = tabIdx;
+            ProfitConfig.getInstance().setSavedSelectedTab(tabIdx);
             mc.setScreen(new ProfitDetailsScreen());
         });
     }
@@ -375,6 +374,21 @@ public class AutoFlipCalcHandler {
                 }
             }
         } catch (Exception ignored) {}
+
+        try {
+            List<net.minecraft.network.chat.Component> tooltip = stack.getTooltipLines(
+                    net.minecraft.world.item.Item.TooltipContext.EMPTY,
+                    Minecraft.getInstance().player,
+                    net.minecraft.world.item.TooltipFlag.NORMAL
+            );
+            for (net.minecraft.network.chat.Component lineComponent : tooltip) {
+                Matcher m = pricePattern.matcher(lineComponent.getString());
+                if (m.find()) {
+                    return parseFormattedMoney(m.group(1));
+                }
+            }
+        } catch (Exception ignored) {}
+
         return 0.0;
     }
 

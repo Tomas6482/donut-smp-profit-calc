@@ -484,14 +484,13 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         // Auto Check Button
         ButtonComponent autoCheckBtn = UIComponents.button(Component.literal("Auto Check Prices"), btn -> {
-            if (selectedTab == 0) {
-                AutoFlipCalcHandler.start(FlipMode.BONE);
-            } else if (selectedTab == 1) {
-                AutoFlipCalcHandler.start(FlipMode.KELP);
-            } else {
-                if (Minecraft.getInstance().player != null) {
-                    Minecraft.getInstance().player.displayClientMessage(Component.literal("§a[Auto Flip] Use Price Dumper for custom item scanning!"), true);
-                }
+            switch (selectedTab) {
+                case 0: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BONE); break;
+                case 1: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.KELP); break;
+                case 2: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.OAK_LOG); break;
+                case 3: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.STICKY_PISTON); break;
+                case 4: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE); break;
+                case 5: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BOOKSHELF); break;
             }
         });
         autoCheckBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
