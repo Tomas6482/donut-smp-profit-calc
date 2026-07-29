@@ -1316,28 +1316,9 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         if (uiAdapter == null) return;
         closeSettingsModal();
 
-        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
-
-        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(200), Sizing.content());
-        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
-                .padding(Insets.of(10));
-
-        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
-
-        LabelComponent modalTitle = UIComponents.label(Component.literal("Tools Menu"));
-        modalTitle.color(Color.ofRgb(0xF59E0B));
-
-        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
-        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
-        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
-        closeSpacer.child(closeBtn);
-
-        modalHeader.child(modalTitle);
-        modalHeader.child(closeSpacer);
-        modalCard.child(modalHeader);
-        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+        FlowLayout toolsCard = UIContainers.verticalFlow(Sizing.fixed(140), Sizing.content());
+        toolsCard.surface(Surface.flat(0xF0101216).and(Surface.outline(0xFF333B48)))
+                .padding(Insets.of(4));
 
         ButtonComponent bestDealOpt = UIComponents.button(
             Component.literal("🔍 Best Deal Finder"),
@@ -1346,8 +1327,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 openBestDealFinderModal(null);
             }
         );
-        bestDealOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
-        bestDealOpt.margins(Insets.vertical(2));
+        bestDealOpt.sizing(Sizing.fill(100), Sizing.fixed(18));
+        bestDealOpt.margins(Insets.vertical(1));
 
         ButtonComponent dumperOpt = UIComponents.button(
             Component.literal("📋 Price Dumper"),
@@ -1356,13 +1337,20 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 openPriceDumperSetupModal();
             }
         );
-        dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
-        dumperOpt.margins(Insets.vertical(2));
+        dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(18));
+        dumperOpt.margins(Insets.vertical(1));
 
-        modalCard.child(bestDealOpt);
-        modalCard.child(dumperOpt);
+        toolsCard.child(bestDealOpt);
+        toolsCard.child(dumperOpt);
 
-        activeOverlayModal = UIContainers.overlay(modalCard);
+        FlowLayout wrapper = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.fill(100));
+        wrapper.surface(Surface.BLANK);
+        wrapper.horizontalAlignment(HorizontalAlignment.RIGHT);
+        wrapper.verticalAlignment(VerticalAlignment.TOP);
+        wrapper.padding(Insets.of(28, 25, 0, 0));
+        wrapper.child(toolsCard);
+
+        activeOverlayModal = UIContainers.overlay(wrapper);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
@@ -1371,28 +1359,9 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         if (uiAdapter == null) return;
         closeSettingsModal();
 
-        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
-
-        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(220), Sizing.content());
-        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
-                .padding(Insets.of(10));
-
-        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
-
-        LabelComponent modalTitle = UIComponents.label(Component.literal("Select Flip Calculator"));
-        modalTitle.color(Color.ofRgb(0xF59E0B));
-
-        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
-        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
-        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
-        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
-        closeSpacer.child(closeBtn);
-
-        modalHeader.child(modalTitle);
-        modalHeader.child(closeSpacer);
-        modalCard.child(modalHeader);
-        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+        FlowLayout flipCard = UIContainers.verticalFlow(Sizing.fixed(150), Sizing.content());
+        flipCard.surface(Surface.flat(0xF0101216).and(Surface.outline(0xFF333B48)))
+                .padding(Insets.of(4));
 
         String[] options = {
             "Bone Flip", "Kelp Flip", "Oak Log Flip",
@@ -1413,12 +1382,19 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                     Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
                 }
             );
-            optBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
+            optBtn.sizing(Sizing.fill(100), Sizing.fixed(16));
             optBtn.margins(Insets.vertical(1));
-            modalCard.child(optBtn);
+            flipCard.child(optBtn);
         }
 
-        activeOverlayModal = UIContainers.overlay(modalCard);
+        FlowLayout wrapper = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.fill(100));
+        wrapper.surface(Surface.BLANK);
+        wrapper.horizontalAlignment(HorizontalAlignment.LEFT);
+        wrapper.verticalAlignment(VerticalAlignment.TOP);
+        wrapper.padding(Insets.of(70, 0, 0, 32));
+        wrapper.child(flipCard);
+
+        activeOverlayModal = UIContainers.overlay(wrapper);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
