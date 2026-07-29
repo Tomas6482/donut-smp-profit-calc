@@ -13,8 +13,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,6 +40,19 @@ public class AutoFlipCalcHandler {
         BOOKSHELF
     }
 
+    public static class Listing {
+        public final double price;
+        public final double quantity;
+        public Listing(double price, double quantity) {
+            this.price = price;
+            this.quantity = quantity;
+        }
+        @Override
+        public String toString() {
+            return String.format("$%.2f (qty: %.0f)", price, quantity);
+        }
+    }
+
     private static class ScanTask {
         final String command;
         final String targetItemKey;
@@ -53,32 +70,18 @@ public class AutoFlipCalcHandler {
     private static int pagesScanned = 0;
     private static long lastActionTime = 0;
 
-    // Captured prices
-    private static double capturedBonePrice = 0.0;
-    private static double capturedBlockPrice = 0.0;
+    // Map to accumulate raw listings for each target key during multi-page scan
+    private static final Map<String, List<Listing>> accumulatedListings = new HashMap<>();
 
-    private static double capturedRawKelpPrice = 0.0;
-    private static double capturedDriedKelpPrice = 0.0;
-    private static double capturedCharcoalPrice = 0.0;
-
-    private static double capturedOakLogPrice = 0.0;
-    private static double capturedOakPlanksPrice = 0.0;
-
-    private static double capturedPistonPrice = 0.0;
-    private static double capturedSlimeballPrice = 0.0;
-    private static double capturedStickyPistonPrice = 0.0;
-
-    private static double capturedGoldIngotPrice = 0.0;
-    private static double capturedApplePrice = 0.0;
-    private static double capturedGapplePrice = 0.0;
-
-    private static double capturedBookPrice = 0.0;
-    private static double capturedBookshelfPrice = 0.0;
+    // Final computed top-3 average prices to save
+    private static final Map<String, Double> finalComputedPrices = new HashMap<>();
 
     public static void stop() {
         running = false;
         taskQueue.clear();
         currentTask = null;
+        accumulatedListings.clear();
+        finalComputedPrices.clear();
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {
             mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("§e[Auto Flip] Cancelled."), true);
@@ -103,20 +106,15 @@ public class AutoFlipCalcHandler {
         pagesScanned = 0;
         lastActionTime = System.currentTimeMillis();
 
-        // Reset captured prices
-        capturedBonePrice = 0.0; capturedBlockPrice = 0.0;
-        capturedRawKelpPrice = 0.0; capturedDriedKelpPrice = 0.0; capturedCharcoalPrice = 0.0;
-        capturedOakLogPrice = 0.0; capturedOakPlanksPrice = 0.0;
-        capturedPistonPrice = 0.0; capturedSlimeballPrice = 0.0; capturedStickyPistonPrice = 0.0;
-        capturedGoldIngotPrice = 0.0; capturedApplePrice = 0.0; capturedGapplePrice = 0.0;
-        capturedBookPrice = 0.0; capturedBookshelfPrice = 0.0;
+        accumulatedListings.clear();
+        finalComputedPrices.clear();
 
         switch (mode) {
             case BONE:
                 taskQueue.add(new ScanTask("order bone", "bone"));
+                taskQueue.add(new ScanTask("order bone_block", "bone_block"));
                 break;
             case KELP:
-                taskQueue.add(new ScanTask("order bone", "bone"));
                 taskQueue.add(new ScanTask("order kelp", "kelp"));
                 taskQueue.add(new ScanTask("order charcoal", "charcoal"));
                 break;
@@ -182,6 +180,7 @@ public class AutoFlipCalcHandler {
         // Timeout check (15s max per command step)
         if (now - lastActionTime > TIMEOUT_LIMIT_MS) {
             LOGGER.warn("[Auto Flip] Step timed out for /{}", currentTask.command);
+            processAndStoreTaskResults(currentTask.targetItemKey);
             currentTask = null;
             lastActionTime = now + 200;
             return;
@@ -191,34 +190,44 @@ public class AutoFlipCalcHandler {
             long delayRequired = (pagesScanned == 0) ? INITIAL_COMMAND_DELAY_MS : PAGE_TURN_DELAY_MS;
             if (now - lastActionTime < delayRequired) return;
 
-            boolean scannedAny = scanCurrentContainer(mc, containerScreen, currentTask.targetItemKey);
+            // Scan current page
+            scanCurrentContainer(containerScreen, currentTask.targetItemKey);
 
-            if (scannedAny || pagesScanned >= 3) {
-                currentTask = null;
-                lastActionTime = System.currentTimeMillis();
-                return;
-            }
-
-            // Next Page if available
-            List<Slot> slots = containerScreen.getMenu().slots;
-            if (pagesScanned < 3 && slots.size() > 53 && !slots.get(53).getItem().isEmpty()) {
+            // Pagination logic: Scan up to 3 pages total (pages 0, 1, 2)
+            if (pagesScanned < 2 && isNextPageAvailable(containerScreen)) {
                 pagesScanned++;
                 lastActionTime = now;
-                mc.gameMode.handleInventoryMouseClick(containerScreen.getMenu().containerId, 53, 0, ClickType.PICKUP, mc.player);
+                int containerId = containerScreen.getMenu().containerId;
+                mc.gameMode.handleInventoryMouseClick(containerId, 53, 0, ClickType.PICKUP, mc.player);
                 LOGGER.info("[Auto Flip] Safely clicked Next Page (Slot 53) in /{}. Page count: {}", currentTask.command, pagesScanned);
             } else {
+                // Done scanning 3 pages or no next page available
+                processAndStoreTaskResults(currentTask.targetItemKey);
                 currentTask = null;
                 lastActionTime = System.currentTimeMillis();
             }
         }
     }
 
-    private static boolean scanCurrentContainer(Minecraft mc, AbstractContainerScreen<?> containerScreen, String targetKey) {
-        if (containerScreen.getMenu() == null) return false;
-        List<Slot> slots = containerScreen.getMenu().slots;
-        if (slots.size() < 45) return false;
+    private static boolean isNextPageAvailable(AbstractContainerScreen<?> screen) {
+        if (screen == null || screen.getMenu() == null) return false;
+        List<Slot> slots = screen.getMenu().slots;
+        if (slots.size() <= 53) return false;
 
-        boolean foundTarget = false;
+        ItemStack stack = slots.get(53).getItem();
+        if (stack.isEmpty()) return false;
+
+        String name = stack.getHoverName().getString().toLowerCase();
+        Identifier loc = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        String itemId = loc != null ? loc.getPath().toLowerCase() : "";
+
+        return name.contains("next") || name.contains("page") || name.contains("-->") || itemId.contains("arrow");
+    }
+
+    private static void scanCurrentContainer(AbstractContainerScreen<?> containerScreen, String targetKey) {
+        if (containerScreen.getMenu() == null) return;
+        List<Slot> slots = containerScreen.getMenu().slots;
+        if (slots.size() < 45) return;
 
         for (int i = 0; i < Math.min(45, slots.size()); i++) {
             ItemStack stack = slots.get(i).getItem();
@@ -231,82 +240,152 @@ public class AutoFlipCalcHandler {
             double price = parsePriceFromStack(stack);
             if (price <= 0) continue;
 
+            double quantity = parseQuantityFromStack(stack);
+
+            String matchKey = null;
+
             if (targetKey.equals("bone")) {
                 if (path.equals("bone") || name.equalsIgnoreCase("bone")) {
-                    capturedBonePrice = price;
-                    foundTarget = true;
-                } else if (path.equals("bone_block") || name.contains("bone block")) {
-                    capturedBlockPrice = price;
+                    matchKey = "bone";
+                }
+            } else if (targetKey.equals("bone_block")) {
+                if (path.equals("bone_block") || name.contains("bone block")) {
+                    matchKey = "bone_block";
                 }
             } else if (targetKey.equals("kelp")) {
                 if (path.equals("dried_kelp_block") || name.contains("dried kelp block")) {
-                    if (price > capturedDriedKelpPrice) capturedDriedKelpPrice = price;
-                    foundTarget = true;
-                } else if (path.equals("kelp") || name.contains("kelp")) {
-                    if (price > capturedRawKelpPrice) capturedRawKelpPrice = price;
-                    foundTarget = true;
+                    matchKey = "dried_kelp_block";
+                } else if (path.equals("dried_kelp") || (name.contains("dried") && name.contains("kelp") && !name.contains("block"))) {
+                    matchKey = "dried_kelp";
+                } else if ((path.equals("kelp") || name.contains("kelp")) && !name.contains("dried")) {
+                    matchKey = "raw_kelp";
                 }
             } else if (targetKey.equals("charcoal")) {
                 if (path.equals("charcoal") || name.contains("charcoal")) {
-                    capturedCharcoalPrice = price;
-                    foundTarget = true;
+                    matchKey = "charcoal";
                 }
             } else if (targetKey.equals("oak_log")) {
                 if (path.equals("oak_log") || name.contains("oak log")) {
-                    capturedOakLogPrice = price;
-                    foundTarget = true;
-                } else if (path.equals("oak_planks") || name.contains("oak planks")) {
-                    capturedOakPlanksPrice = price;
+                    matchKey = "oak_log";
                 }
             } else if (targetKey.equals("oak_planks")) {
                 if (path.equals("oak_planks") || name.contains("oak planks")) {
-                    capturedOakPlanksPrice = price;
-                    foundTarget = true;
+                    matchKey = "oak_planks";
                 }
             } else if (targetKey.equals("piston")) {
                 if (path.equals("piston") || name.contains("piston")) {
-                    capturedPistonPrice = price;
-                    foundTarget = true;
+                    matchKey = "piston";
                 }
             } else if (targetKey.equals("slimeball")) {
                 if (path.equals("slime_ball") || path.equals("slimeball") || name.contains("slimeball") || name.contains("slime ball")) {
-                    capturedSlimeballPrice = price;
-                    foundTarget = true;
+                    matchKey = "slimeball";
                 }
             } else if (targetKey.equals("sticky_piston")) {
                 if (path.equals("sticky_piston") || name.contains("sticky piston")) {
-                    capturedStickyPistonPrice = price;
-                    foundTarget = true;
+                    matchKey = "sticky_piston";
                 }
             } else if (targetKey.equals("gold_ingot")) {
                 if (path.equals("gold_ingot") || name.contains("gold ingot")) {
-                    capturedGoldIngotPrice = price;
-                    foundTarget = true;
+                    matchKey = "gold_ingot";
                 }
             } else if (targetKey.equals("apple")) {
                 if (path.equals("apple") || name.equals("apple")) {
-                    capturedApplePrice = price;
-                    foundTarget = true;
+                    matchKey = "apple";
                 }
             } else if (targetKey.equals("golden_apple")) {
                 if (path.equals("golden_apple") || name.contains("golden apple")) {
-                    capturedGapplePrice = price;
-                    foundTarget = true;
+                    matchKey = "golden_apple";
                 }
             } else if (targetKey.equals("book")) {
                 if (path.equals("book") || name.equals("book")) {
-                    capturedBookPrice = price;
-                    foundTarget = true;
+                    matchKey = "book";
                 }
             } else if (targetKey.equals("bookshelf")) {
                 if (path.equals("bookshelf") || name.contains("bookshelf")) {
-                    capturedBookshelfPrice = price;
-                    foundTarget = true;
+                    matchKey = "bookshelf";
                 }
             }
+
+            if (matchKey != null) {
+                accumulatedListings.computeIfAbsent(matchKey, k -> new ArrayList<>()).add(new Listing(price, quantity));
+            }
+        }
+    }
+
+    private static void processAndStoreTaskResults(String targetKey) {
+        // Collect all keys matching targetKey or populated during this task
+        List<String> keysToProcess = new ArrayList<>();
+        if (targetKey.equals("kelp")) {
+            keysToProcess.add("raw_kelp");
+            keysToProcess.add("dried_kelp");
+            keysToProcess.add("dried_kelp_block");
+        } else {
+            keysToProcess.add(targetKey);
         }
 
-        return foundTarget;
+        for (String key : keysToProcess) {
+            List<Listing> rawListings = accumulatedListings.getOrDefault(key, Collections.emptyList());
+            if (rawListings.isEmpty()) {
+                LOGGER.warn("[Auto Flip] Zero matches found for key '{}'", key);
+                continue;
+            }
+
+            // 1. Calculate Median Quantity
+            List<Double> quantities = new ArrayList<>();
+            for (Listing l : rawListings) {
+                quantities.add(l.quantity);
+            }
+            Collections.sort(quantities);
+            double medianQty;
+            int n = quantities.size();
+            if (n % 2 == 1) {
+                medianQty = quantities.get(n / 2);
+            } else {
+                medianQty = (quantities.get(n / 2 - 1) + quantities.get(n / 2)) / 2.0;
+            }
+
+            double cutoffQty = 0.25 * medianQty;
+
+            // 2. Filter listings below 25% of median quantity
+            List<Listing> filteredListings = new ArrayList<>();
+            List<Listing> outlierListings = new ArrayList<>();
+
+            for (Listing l : rawListings) {
+                if (l.quantity >= cutoffQty) {
+                    filteredListings.add(l);
+                } else {
+                    outlierListings.add(l);
+                }
+            }
+
+            // Fallback if filtering dropped everything
+            if (filteredListings.isEmpty()) {
+                filteredListings = rawListings;
+                outlierListings.clear();
+            }
+
+            // 3. Take Top 3 Lowest Prices (or highest for buy orders if desired; top 3 lowest asking prices)
+            filteredListings.sort((a, b) -> Double.compare(a.price, b.price));
+            int top3Count = Math.min(3, filteredListings.size());
+            double sumTop3 = 0.0;
+            List<Listing> top3List = new ArrayList<>();
+            for (int i = 0; i < top3Count; i++) {
+                Listing l = filteredListings.get(i);
+                top3List.add(l);
+                sumTop3 += l.price;
+            }
+            double avgTop3 = sumTop3 / top3Count;
+            finalComputedPrices.put(key, avgTop3);
+
+            // Detailed logging for inspection
+            LOGGER.info("[Auto Flip] Summary for key '{}':", key);
+            LOGGER.info("  Raw Matches ({}) : {}", rawListings.size(), rawListings);
+            LOGGER.info("  Median Qty      : {} (Cutoff >= {})", medianQty, cutoffQty);
+            LOGGER.info("  Outliers Dropped: {}", outlierListings);
+            LOGGER.info("  Filtered Set ({}): {}", filteredListings.size(), filteredListings);
+            LOGGER.info("  Top 3 Used      : {}", top3List);
+            LOGGER.info("  Final Top-3 Avg : ${}", String.format("%.2f", avgTop3));
+        }
     }
 
     private static void finishAutoScan(Minecraft mc) {
@@ -314,26 +393,48 @@ public class AutoFlipCalcHandler {
         currentTask = null;
         ProfitConfig config = ProfitConfig.getInstance();
 
-        if (capturedBonePrice > 0) config.setSavedBonePrice(DEC_FMT.format(capturedBonePrice));
-        if (capturedBlockPrice > 0) config.setSavedBlockPrice(DEC_FMT.format(capturedBlockPrice));
+        Double boneP = finalComputedPrices.get("bone");
+        Double blockP = finalComputedPrices.get("bone_block");
 
-        if (capturedRawKelpPrice > 0) config.setSavedRawKelpPrice(DEC_FMT.format(capturedRawKelpPrice));
-        if (capturedDriedKelpPrice > 0) config.setSavedDriedKelpPrice(DEC_FMT.format(capturedDriedKelpPrice));
-        if (capturedCharcoalPrice > 0) config.setSavedCharcoalPrice(DEC_FMT.format(capturedCharcoalPrice));
+        Double rawKelpP = finalComputedPrices.get("raw_kelp");
+        Double driedKelpP = finalComputedPrices.get("dried_kelp");
+        Double driedKelpBlockP = finalComputedPrices.get("dried_kelp_block");
+        Double charcoalP = finalComputedPrices.get("charcoal");
 
-        if (capturedOakLogPrice > 0) config.setSavedOakLogPrice(DEC_FMT.format(capturedOakLogPrice));
-        if (capturedOakPlanksPrice > 0) config.setSavedOakPlanksPrice(DEC_FMT.format(capturedOakPlanksPrice));
+        Double oakLogP = finalComputedPrices.get("oak_log");
+        Double oakPlanksP = finalComputedPrices.get("oak_planks");
 
-        if (capturedPistonPrice > 0) config.setSavedPistonPrice(DEC_FMT.format(capturedPistonPrice));
-        if (capturedSlimeballPrice > 0) config.setSavedSlimeballPrice(DEC_FMT.format(capturedSlimeballPrice));
-        if (capturedStickyPistonPrice > 0) config.setSavedStickyPistonPrice(DEC_FMT.format(capturedStickyPistonPrice));
+        Double pistonP = finalComputedPrices.get("piston");
+        Double slimeballP = finalComputedPrices.get("slimeball");
+        Double stickyPistonP = finalComputedPrices.get("sticky_piston");
 
-        if (capturedGoldIngotPrice > 0) config.setSavedGoldIngotPrice(DEC_FMT.format(capturedGoldIngotPrice));
-        if (capturedApplePrice > 0) config.setSavedApplePrice(DEC_FMT.format(capturedApplePrice));
-        if (capturedGapplePrice > 0) config.setSavedGapplePrice(DEC_FMT.format(capturedGapplePrice));
+        Double goldIngotP = finalComputedPrices.get("gold_ingot");
+        Double appleP = finalComputedPrices.get("apple");
+        Double gappleP = finalComputedPrices.get("golden_apple");
 
-        if (capturedBookPrice > 0) config.setSavedBookPrice(DEC_FMT.format(capturedBookPrice));
-        if (capturedBookshelfPrice > 0) config.setSavedBookshelfPrice(DEC_FMT.format(capturedBookshelfPrice));
+        Double bookP = finalComputedPrices.get("book");
+        Double bookshelfP = finalComputedPrices.get("bookshelf");
+
+        if (boneP != null && boneP > 0) config.setSavedBonePrice(DEC_FMT.format(boneP));
+        if (blockP != null && blockP > 0) config.setSavedBlockPrice(DEC_FMT.format(blockP));
+
+        if (rawKelpP != null && rawKelpP > 0) config.setSavedRawKelpPrice(DEC_FMT.format(rawKelpP));
+        if (driedKelpBlockP != null && driedKelpBlockP > 0) config.setSavedDriedKelpPrice(DEC_FMT.format(driedKelpBlockP));
+        if (charcoalP != null && charcoalP > 0) config.setSavedCharcoalPrice(DEC_FMT.format(charcoalP));
+
+        if (oakLogP != null && oakLogP > 0) config.setSavedOakLogPrice(DEC_FMT.format(oakLogP));
+        if (oakPlanksP != null && oakPlanksP > 0) config.setSavedOakPlanksPrice(DEC_FMT.format(oakPlanksP));
+
+        if (pistonP != null && pistonP > 0) config.setSavedPistonPrice(DEC_FMT.format(pistonP));
+        if (slimeballP != null && slimeballP > 0) config.setSavedSlimeballPrice(DEC_FMT.format(slimeballP));
+        if (stickyPistonP != null && stickyPistonP > 0) config.setSavedStickyPistonPrice(DEC_FMT.format(stickyPistonP));
+
+        if (goldIngotP != null && goldIngotP > 0) config.setSavedGoldIngotPrice(DEC_FMT.format(goldIngotP));
+        if (appleP != null && appleP > 0) config.setSavedApplePrice(DEC_FMT.format(appleP));
+        if (gappleP != null && gappleP > 0) config.setSavedGapplePrice(DEC_FMT.format(gappleP));
+
+        if (bookP != null && bookP > 0) config.setSavedBookPrice(DEC_FMT.format(bookP));
+        if (bookshelfP != null && bookshelfP > 0) config.setSavedBookshelfPrice(DEC_FMT.format(bookshelfP));
 
         int targetTab = 0;
         switch (activeMode) {
@@ -359,9 +460,47 @@ public class AutoFlipCalcHandler {
         });
     }
 
+    private static double parseQuantityFromStack(ItemStack stack) {
+        if (stack.isEmpty()) return 1.0;
+        double stackCount = stack.getCount();
+
+        Pattern qtyPattern = Pattern.compile("(?:Amount|Qty|Quantity|Requesting|Count|Size)\\s*:?\\s*([0-9.,]+[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
+
+        try {
+            var loreComponent = stack.get(net.minecraft.core.component.DataComponents.LORE);
+            if (loreComponent != null) {
+                for (net.minecraft.network.chat.Component comp : loreComponent.lines()) {
+                    Matcher m = qtyPattern.matcher(comp.getString());
+                    if (m.find()) {
+                        double parsed = parseFormattedMoney(m.group(1));
+                        if (parsed > 0) return Math.max(stackCount, parsed);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            List<net.minecraft.network.chat.Component> tooltip = stack.getTooltipLines(
+                    net.minecraft.world.item.Item.TooltipContext.EMPTY,
+                    Minecraft.getInstance().player,
+                    net.minecraft.world.item.TooltipFlag.NORMAL
+            );
+            for (net.minecraft.network.chat.Component lineComponent : tooltip) {
+                Matcher m = qtyPattern.matcher(lineComponent.getString());
+                if (m.find()) {
+                    double parsed = parseFormattedMoney(m.group(1));
+                    if (parsed > 0) return Math.max(stackCount, parsed);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return Math.max(1.0, stackCount);
+    }
+
     private static double parsePriceFromStack(ItemStack stack) {
         if (stack.isEmpty()) return 0.0;
-        Pattern pricePattern = Pattern.compile("\\$\\s*([0-9.,]+(?:e[+-]?[0-9]+)?\\s*[kmbKMB]?)\\s*(?:each|/each|per item)", Pattern.CASE_INSENSITIVE);
+        // Relaxed price pattern matching any line containing $ followed by a number
+        Pattern pricePattern = Pattern.compile("\\$\\s*([0-9.,]+(?:e[+-]?[0-9]+)?\\s*[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
 
         try {
             var loreComponent = stack.get(net.minecraft.core.component.DataComponents.LORE);
