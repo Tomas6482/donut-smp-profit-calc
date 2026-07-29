@@ -25,19 +25,21 @@ public class AutoOrderCreator {
 
     public enum State {
         IDLE,
-        OPEN_ORDER_GUI,          // Executed /order, waiting for chest GUI
-        CLICK_NEW_ORDER_SLOT,    // Chest GUI open, finding & clicking available slot 0..17
-        WAIT_CHOOSE_ITEM_SCREEN, // Waiting for "Choose Item" dialog screen
-        TYPING_ITEM_SEARCH,      // In Choose Item screen, typing item into search box
-        CLICKING_ITEM_BUTTON,    // Finding and clicking matching item button in grid
-        WAIT_AMOUNT_SCREEN,      // Waiting for "How many?" dialog screen
-        TYPING_AMOUNT,           // Setting amount in EditBox
-        CLICKING_AMOUNT_NEXT,    // Clicking "Next" button
-        WAIT_PRICE_SCREEN,       // Waiting for "Price per item?" dialog screen
-        TYPING_PRICE,            // Setting price per item in EditBox
-        CLICKING_PRICE_REVIEW,   // Clicking "Review Order" button
-        WAIT_REVIEW_SCREEN,      // Waiting for "Review Order" dialog screen
-        CLICKING_CREATE_ORDER,   // Clicking "Create Order" button
+        OPEN_ORDER_GUI,           // Executed /order, waiting for "Orders (Page 1)" chest GUI
+        CLICK_YOUR_ORDERS_SLOT,   // Click Slot #51 ("Your Orders")
+        WAIT_YOUR_ORDERS_GUI,     // Waiting for "Orders -> Your Orders" screen
+        CLICK_NEW_ORDER_SLOT,     // In "Orders -> Your Orders", click first "New Order" slot in 0..17
+        WAIT_CHOOSE_ITEM_SCREEN,  // Waiting for "Choose Item" dialog screen
+        TYPING_ITEM_SEARCH,       // In Choose Item screen, typing item into search box
+        CLICKING_ITEM_BUTTON,     // Finding and clicking matching item button in grid
+        WAIT_AMOUNT_SCREEN,       // Waiting for "How many?" dialog screen
+        TYPING_AMOUNT,            // Setting amount in EditBox
+        CLICKING_AMOUNT_NEXT,     // Clicking "Next" button
+        WAIT_PRICE_SCREEN,        // Waiting for "Price per item?" dialog screen
+        TYPING_PRICE,             // Setting price per item in EditBox
+        CLICKING_PRICE_REVIEW,    // Clicking "Review Order" button
+        WAIT_REVIEW_SCREEN,       // Waiting for "Review Order" dialog screen
+        CLICKING_CREATE_ORDER,    // Clicking "Create Order" button
         FINISHED,
         FAILED
     }
@@ -119,8 +121,43 @@ public class AutoOrderCreator {
             case OPEN_ORDER_GUI -> {
                 if (screen instanceof AbstractContainerScreen<?> containerScreen) {
                     String title = getScreenTitle(screen);
-                    if (title.contains("order")) {
-                        LOGGER.info("[Auto Order Creator] /order container screen detected: '{}'", title);
+                    if (title.contains("your orders")) {
+                        LOGGER.info("[Auto Order Creator] Already in 'Orders -> Your Orders' GUI: '{}'", title);
+                        state = State.CLICK_NEW_ORDER_SLOT;
+                        stateStartTime = now;
+                        stateTicks = 0;
+                    } else if (title.contains("order")) {
+                        LOGGER.info("[Auto Order Creator] /order main screen detected: '{}'", title);
+                        state = State.CLICK_YOUR_ORDERS_SLOT;
+                        stateStartTime = now;
+                        stateTicks = 0;
+                    }
+                }
+            }
+
+            case CLICK_YOUR_ORDERS_SLOT -> {
+                if (screen instanceof AbstractContainerScreen<?> containerScreen) {
+                    int slotToClick = findYourOrdersSlot(containerScreen);
+                    if (slotToClick < 0) {
+                        fail("Could not find 'Your Orders' button (slot 51)");
+                        return;
+                    }
+
+                    LOGGER.info("[Auto Order Creator] Clicking 'Your Orders' slot #{}", slotToClick);
+                    int containerId = containerScreen.getMenu().containerId;
+                    mc.gameMode.handleInventoryMouseClick(containerId, slotToClick, 0, ClickType.PICKUP, mc.player);
+
+                    state = State.WAIT_YOUR_ORDERS_GUI;
+                    stateStartTime = now;
+                    stateTicks = 0;
+                }
+            }
+
+            case WAIT_YOUR_ORDERS_GUI -> {
+                if (screen instanceof AbstractContainerScreen<?> containerScreen) {
+                    String title = getScreenTitle(screen);
+                    if (title.contains("your orders")) {
+                        LOGGER.info("[Auto Order Creator] 'Orders -> Your Orders' GUI detected: '{}'", title);
                         state = State.CLICK_NEW_ORDER_SLOT;
                         stateStartTime = now;
                         stateTicks = 0;
@@ -328,21 +365,43 @@ public class AutoOrderCreator {
         return screen.getTitle().getString().toLowerCase(Locale.ROOT);
     }
 
+    private static int findYourOrdersSlot(AbstractContainerScreen<?> containerScreen) {
+        if (containerScreen == null || containerScreen.getMenu() == null) return -1;
+        List<Slot> slots = containerScreen.getMenu().slots;
+
+        // Check slot 51 first (standard location for 'Your Orders')
+        if (slots.size() > 51) {
+            String name = slots.get(51).getItem().getHoverName().getString().toLowerCase(Locale.ROOT);
+            if (name.contains("your order") || name.contains("order")) {
+                return 51;
+            }
+        }
+
+        // Check bottom bar slots 45-53
+        for (int i = 45; i < Math.min(54, slots.size()); i++) {
+            String name = slots.get(i).getItem().getHoverName().getString().toLowerCase(Locale.ROOT);
+            if (name.contains("your order")) {
+                return i;
+            }
+        }
+        return 51; // Fallback to slot 51
+    }
+
     private static int findAvailableNewOrderSlot(AbstractContainerScreen<?> containerScreen) {
         if (containerScreen == null || containerScreen.getMenu() == null) return -1;
         List<Slot> slots = containerScreen.getMenu().slots;
 
         for (int i = 0; i < Math.min(18, slots.size()); i++) {
             ItemStack stack = slots.get(i).getItem();
-            String name = stack.getHoverName().getString().toLowerCase();
+            String name = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
 
             // Skip locked or max orders slots
-            if (name.contains("max order") || name.contains("locked") || name.contains("limit")) {
+            if (name.contains("max order") || name.contains("locked") || name.contains("limit") || name.contains("buy donut")) {
                 continue;
             }
 
             // Available new order slot indicators
-            if (name.contains("new order") || name.contains("create order") || name.contains("click") || name.contains("new") || stack.isEmpty()) {
+            if (name.contains("new order") || name.contains("create order") || name.contains("click to create") || name.contains("new") || stack.isEmpty()) {
                 return i;
             }
         }
