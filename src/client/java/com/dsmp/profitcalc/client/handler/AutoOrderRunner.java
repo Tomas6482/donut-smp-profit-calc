@@ -49,6 +49,8 @@ public class AutoOrderRunner {
         PARSING_SCREEN
     }
 
+    public static OrderRunResult lastResult = null;
+
     private static boolean running = false;
     private static String itemStr = "";
     private static int amount = 0;
@@ -131,15 +133,12 @@ public class AutoOrderRunner {
                             calcRes
                     );
 
+                    AutoOrderRunner.lastResult = result;
                     mc.player.closeContainer();
                     stop();
 
                     mc.execute(() -> {
-                        ProfitDetailsScreen detailsScreen = new ProfitDetailsScreen();
-                        mc.setScreen(detailsScreen);
-                        if (completionCallback != null) {
-                            completionCallback.accept(result);
-                        }
+                        mc.setScreen(new ProfitDetailsScreen());
                     });
                 } else {
                     finishWithEmpty(mc);

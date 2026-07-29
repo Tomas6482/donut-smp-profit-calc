@@ -216,6 +216,12 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         refreshData();
         updateCalc();
+
+        if (com.dsmp.profitcalc.client.handler.AutoOrderRunner.lastResult != null) {
+            com.dsmp.profitcalc.client.handler.AutoOrderRunner.OrderRunResult res = com.dsmp.profitcalc.client.handler.AutoOrderRunner.lastResult;
+            com.dsmp.profitcalc.client.handler.AutoOrderRunner.lastResult = null;
+            openAutoOrderConfirmModal(res);
+        }
     }
 
     private void rebuildLeftPanel() {
