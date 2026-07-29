@@ -9,6 +9,8 @@ import com.dsmp.profitcalc.client.tracker.ProfitTracker;
 import com.dsmp.profitcalc.client.tracker.Transaction;
 import com.dsmp.profitcalc.client.tracker.TransactionType;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import io.wispforest.owo.ui.base.BaseOwoScreen;
 import io.wispforest.owo.ui.component.ButtonComponent;
 import io.wispforest.owo.ui.component.CheckboxComponent;
@@ -1125,6 +1127,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         }
     }
 
+    private static final Set<String> expandedEntryKeys = new HashSet<>();
+
     private static class CollapsedTransactionEntry {
         public final List<Transaction> transactions = new ArrayList<>();
         public String itemName;
@@ -1172,6 +1176,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         public String getLatestFormattedTime() {
             return transactions.get(0).getFormattedTime();
         }
+
+        public String getEntryKey() {
+            return type + "_" + itemName + "_" + transactions.get(0).getTimestamp();
+        }
     }
 
     private void refreshData() {
@@ -1214,6 +1222,12 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         int rowIdx = 0;
         for (CollapsedTransactionEntry entry : collapsedList) {
+            String entryKey = entry.getEntryKey();
+            boolean isExpanded = expandedEntryKeys.contains(entryKey);
+            boolean hasMultiple = entry.transactions.size() > 1;
+
+            FlowLayout entryCard = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+
             FlowLayout row = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
             row.padding(Insets.of(4, 4, 4, 4));
 
@@ -1229,16 +1243,19 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             typeLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(40), Sizing.content());
 
             LabelComponent itemLbl = UIComponents.label(Component.literal(entry.itemName));
-            itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(110), Sizing.content());
+            itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(100), Sizing.content());
 
             LabelComponent amtLbl = UIComponents.label(Component.literal(entry.getFormattedQty()));
-            amtLbl.color(Color.ofRgb(0xD1D5DB)).sizing(Sizing.fixed(50), Sizing.content());
+            amtLbl.color(Color.ofRgb(0xD1D5DB)).sizing(Sizing.fixed(55), Sizing.content());
 
             LabelComponent unitLbl = UIComponents.label(Component.literal(CURRENCY_FORMAT.format(entry.getEffectiveUnitPrice())));
-            unitLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(70), Sizing.content());
+            unitLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(65), Sizing.content());
 
             LabelComponent totalLbl = UIComponents.label(Component.literal((isSell ? "+" : "-") + CURRENCY_FORMAT.format(entry.totalPrice)));
-            totalLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(70), Sizing.content());
+            totalLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(65), Sizing.content());
+
+            FlowLayout actionBox = UIContainers.horizontalFlow(Sizing.fixed(60), Sizing.content());
+            actionBox.verticalAlignment(VerticalAlignment.CENTER);
 
             ButtonComponent undoRowBtn = UIComponents.button(Component.literal("Undo"), btn -> {
                 for (Transaction t : entry.transactions) {
@@ -1246,7 +1263,22 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 }
                 refreshData();
             });
-            undoRowBtn.sizing(Sizing.fixed(45), Sizing.fixed(16));
+            undoRowBtn.sizing(Sizing.fixed(38), Sizing.fixed(16));
+            undoRowBtn.margins(Insets.right(2));
+            actionBox.child(undoRowBtn);
+
+            if (hasMultiple) {
+                ButtonComponent toggleBtn = UIComponents.button(Component.literal(isExpanded ? "▼" : "▶"), btn -> {
+                    if (isExpanded) {
+                        expandedEntryKeys.remove(entryKey);
+                    } else {
+                        expandedEntryKeys.add(entryKey);
+                    }
+                    refreshData();
+                });
+                toggleBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+                actionBox.child(toggleBtn);
+            }
 
             row.child(timeLbl);
             row.child(typeLbl);
@@ -1254,9 +1286,49 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             row.child(amtLbl);
             row.child(unitLbl);
             row.child(totalLbl);
-            row.child(undoRowBtn);
+            row.child(actionBox);
 
-            transactionListContainer.child(row);
+            entryCard.child(row);
+
+            if (hasMultiple && isExpanded) {
+                FlowLayout subDetails = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+                subDetails.surface(Surface.flat(0x6011141A).and(Surface.outline(0x40333B48)))
+                        .padding(Insets.of(4, 4, 4, 16))
+                        .margins(Insets.bottom(2));
+
+                int subIdx = 1;
+                for (Transaction subTx : entry.transactions) {
+                    FlowLayout subRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+                    subRow.verticalAlignment(VerticalAlignment.CENTER);
+                    subRow.margins(Insets.vertical(1));
+
+                    LabelComponent bullet = UIComponents.label(Component.literal("↳ #" + subIdx + " [" + subTx.getFormattedTime() + "]"));
+                    bullet.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(110), Sizing.content());
+
+                    LabelComponent subQtyPrice = UIComponents.label(Component.literal((entry.isAh ? "1x AH" : subTx.getAmount() + "x") + " @ " + CURRENCY_FORMAT.format(subTx.getPricePerItem())));
+                    subQtyPrice.color(Color.ofRgb(0xD1D5DB)).sizing(Sizing.fixed(140), Sizing.content());
+
+                    LabelComponent subTotal = UIComponents.label(Component.literal((isSell ? "+" : "-") + CURRENCY_FORMAT.format(subTx.getTotalPrice())));
+                    subTotal.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(80), Sizing.content());
+
+                    ButtonComponent subUndoBtn = UIComponents.button(Component.literal("Undo"), b -> {
+                        ProfitTracker.getInstance().removeTransaction(subTx);
+                        refreshData();
+                    });
+                    subUndoBtn.sizing(Sizing.fixed(38), Sizing.fixed(14));
+
+                    subRow.child(bullet);
+                    subRow.child(subQtyPrice);
+                    subRow.child(subTotal);
+                    subRow.child(subUndoBtn);
+
+                    subDetails.child(subRow);
+                    subIdx++;
+                }
+                entryCard.child(subDetails);
+            }
+
+            transactionListContainer.child(entryCard);
             rowIdx++;
         }
     }
