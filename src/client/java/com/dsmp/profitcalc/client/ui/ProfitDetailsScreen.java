@@ -890,6 +890,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         modalHeader.child(closeSpacer);
         modalCard.child(modalHeader);
 
+        makeDraggable(modalCard, modalHeader);
+
         LabelComponent hudLabel = UIComponents.label(Component.literal("HUD Position Presets:"));
         hudLabel.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(8, 0, 4, 0));
         modalCard.child(hudLabel);
@@ -1029,58 +1031,48 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         }
     }
 
-    @Override
-    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
-        if (activeOverlayModal != null && activeModalCard != null && event.button() == 0) {
-            double mouseX = event.x();
-            double mouseY = event.y();
-            int mx = activeModalCard.x();
-            int my = activeModalCard.y();
-            int mw = activeModalCard.width();
-            int headerH = 35;
-
-            if (mouseX >= mx && mouseX <= mx + mw && mouseY >= my && mouseY <= my + headerH) {
+    private void makeDraggable(FlowLayout modalCard, FlowLayout modalHeader) {
+        modalHeader.mouseDown().subscribe((event, doubleClick) -> {
+            if (event.button() == 0) {
                 isDraggingModal = true;
-                dragOffsetX = mouseX - mx;
-                dragOffsetY = mouseY - my;
                 return true;
             }
-        }
-        return super.mouseClicked(event, doubleClick);
-    }
+            return false;
+        });
 
-    @Override
-    public boolean mouseDragged(net.minecraft.client.input.MouseButtonEvent event, double deltaX, double deltaY) {
-        if (isDraggingModal && activeModalCard != null) {
-            double mouseX = event.x();
-            double mouseY = event.y();
-            int newX = Math.max(0, (int) (mouseX - dragOffsetX));
-            int newY = Math.max(0, (int) (mouseY - dragOffsetY));
-            activeModalCard.positioning(Positioning.absolute(newX, newY));
-            return true;
-        }
-        return super.mouseDragged(event, deltaX, deltaY);
-    }
+        modalHeader.mouseDrag().subscribe((event, deltaX, deltaY) -> {
+            if (isDraggingModal && activeModalCard != null) {
+                int newX = Math.max(0, activeModalCard.x() + (int) deltaX);
+                int newY = Math.max(0, activeModalCard.y() + (int) deltaY);
 
-    @Override
-    public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
-        if (isDraggingModal && activeModalCard != null && event.button() == 0) {
-            isDraggingModal = false;
-            int finalX = activeModalCard.x();
-            int finalY = activeModalCard.y();
-            ProfitConfig.getInstance().setModalX(finalX);
-            ProfitConfig.getInstance().setModalY(finalY);
-
-            LOGGER.info("[DONUT PROFIT/UI] Modal moved to position: ({}, {})", finalX, finalY);
-            if (Minecraft.getInstance().player != null) {
-                Minecraft.getInstance().player.displayClientMessage(
-                    Component.literal("§e[DONUT PROFIT/UI] Modal moved to position: (" + finalX + ", " + finalY + ")"),
-                    true
-                );
+                activeModalCard.positioning(Positioning.absolute(newX, newY));
+                if (uiAdapter != null) {
+                    uiAdapter.inflateAndMount();
+                }
+                return true;
             }
-            return true;
-        }
-        return super.mouseReleased(event);
+            return false;
+        });
+
+        modalCard.mouseUp().subscribe(event -> {
+            if (isDraggingModal && activeModalCard != null && event.button() == 0) {
+                isDraggingModal = false;
+                int finalX = activeModalCard.x();
+                int finalY = activeModalCard.y();
+                ProfitConfig.getInstance().setModalX(finalX);
+                ProfitConfig.getInstance().setModalY(finalY);
+
+                LOGGER.info("[DONUT PROFIT/UI] Modal moved to position: ({}, {})", finalX, finalY);
+                if (Minecraft.getInstance().player != null) {
+                    Minecraft.getInstance().player.displayClientMessage(
+                        Component.literal("§e[DONUT PROFIT/UI] Modal moved to position: (" + finalX + ", " + finalY + ")"),
+                        true
+                    );
+                }
+                return true;
+            }
+            return false;
+        });
     }
 
     private void applyTheme(int colorHex) {
@@ -1408,6 +1400,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         activeModalCard.child(modalHeader);
         activeModalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
 
+        makeDraggable(activeModalCard, modalHeader);
+
         ButtonComponent bestDealOpt = UIComponents.button(
             Component.literal("🔍 Best Deal Finder"),
             b -> {
@@ -1466,6 +1460,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         modalHeader.child(closeSpacer);
         activeModalCard.child(modalHeader);
         activeModalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+
+        makeDraggable(activeModalCard, modalHeader);
 
         String[] options = {
             "Bone Flip", "Kelp Flip", "Oak Log Flip",
