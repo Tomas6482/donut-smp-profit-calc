@@ -201,6 +201,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         FlowLayout tableHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         tableHeader.padding(Insets.of(6)).surface(Surface.flat(0x80232936));
+        tableHeader.verticalAlignment(VerticalAlignment.CENTER);
 
         tableHeader.child(UIComponents.label(Component.literal("")).sizing(Sizing.fixed(16), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Time")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
@@ -1231,6 +1232,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             FlowLayout row = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
             row.padding(Insets.of(4, 4, 4, 4));
+            row.verticalAlignment(VerticalAlignment.CENTER);
 
             int bg = (rowIdx % 2 == 0) ? 0x40181C24 : 0x2011141A;
             row.surface(Surface.flat(bg));
