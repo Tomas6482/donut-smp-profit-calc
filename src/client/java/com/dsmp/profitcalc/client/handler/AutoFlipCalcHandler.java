@@ -283,6 +283,13 @@ public class AutoFlipCalcHandler {
         List<Slot> slots = containerScreen.getMenu().slots;
         if (slots.size() < 45) return 0;
 
+        // Container loading check: if slots 0..44 are all empty (network packet pending), wait
+        int nonCount = 0;
+        for (int i = 0; i < Math.min(45, slots.size()); i++) {
+            if (!slots.get(i).getItem().isEmpty()) nonCount++;
+        }
+        if (nonCount == 0) return 0;
+
         int newMatchesCount = 0;
 
         for (int i = 0; i < Math.min(45, slots.size()); i++) {
@@ -549,11 +556,40 @@ public class AutoFlipCalcHandler {
         if (bookP != null && bookP > 0) config.setSavedBookPrice(DEC_FMT.format(bookP));
         if (bookshelfP != null && bookshelfP > 0) config.setSavedBookshelfPrice(DEC_FMT.format(bookshelfP));
 
-        if (trapdoorBaselineP != null) {
-            config.setSavedTrapdoorBaselinePrice(trapdoorBaselineP > 0 ? DEC_FMT.format(trapdoorBaselineP) : "-1");
+        if (trapdoorBaselineP != null && trapdoorBaselineP > 0) {
+            config.setSavedTrapdoorBaselinePrice(DEC_FMT.format(trapdoorBaselineP));
+            
+            double offset = parseDouble(config.getSavedTrapdoorOffset(), 100.0);
+            double askPricePerUnit = Math.ceil(trapdoorBaselineP) + offset;
+            double ceiling = (trapdoorCeilingP != null && trapdoorCeilingP > 0) ? trapdoorCeilingP : 0.0;
+            
+            int[] STACK_SIZES = {4, 8, 12, 16, 24};
+            int suggestedIdx = 0;
+            int suggestedSize = 4;
+            
+            if (ceiling > 0) {
+                for (int i = 0; i < STACK_SIZES.length; i++) {
+                    if (askPricePerUnit * STACK_SIZES[i] < ceiling) {
+                        suggestedIdx = i;
+                        suggestedSize = STACK_SIZES[i];
+                    }
+                }
+            } else {
+                suggestedIdx = 3;
+                suggestedSize = 16;
+            }
+
+            config.setSavedTrapdoorStackSizeIndex(suggestedIdx);
+            LOGGER.info("[Auto Flip] Suggested stack size: {}x (Total Ask: ${}, Ceiling: ${})",
+                    suggestedSize, String.format("%.2f", askPricePerUnit * suggestedSize), String.format("%.2f", ceiling));
+        } else {
+            config.setSavedTrapdoorBaselinePrice("-1");
         }
-        if (trapdoorCeilingP != null) {
-            config.setSavedTrapdoorPage1Ceiling(trapdoorCeilingP > 0 ? DEC_FMT.format(trapdoorCeilingP) : "0");
+
+        if (trapdoorCeilingP != null && trapdoorCeilingP > 0) {
+            config.setSavedTrapdoorPage1Ceiling(DEC_FMT.format(trapdoorCeilingP));
+        } else {
+            config.setSavedTrapdoorPage1Ceiling("0");
         }
 
         int targetTab = 0;
@@ -706,6 +742,15 @@ public class AutoFlipCalcHandler {
             return Double.parseDouble(clean) * multiplier;
         } catch (Exception e) {
             return 0.0;
+        }
+    }
+
+    private static double parseDouble(String str, double fallback) {
+        if (str == null) return fallback;
+        try {
+            return Double.parseDouble(str.replace(",", ""));
+        } catch (Exception e) {
+            return fallback;
         }
     }
 }
