@@ -1566,9 +1566,9 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         filterRow.margins(Insets.bottom(4));
 
         String filteredStr = result.jumpFiltered ? 
-            String.format("$%,.2f (Outlier Jump Filtered)", result.highestFilteredPrice) : 
+            String.format("$%,.2f (Filtered)", result.highestFilteredPrice) : 
             String.format("$%,.2f", result.highestFilteredPrice);
-        LabelComponent filterLbl = UIComponents.label(Component.literal("Biggest Filtered Order: " + filteredStr));
+        LabelComponent filterLbl = UIComponents.label(Component.literal("Biggest Order: " + filteredStr));
         filterLbl.color(Color.ofRgb(result.jumpFiltered ? 0xF59E0B : 0x9CA3AF)).margins(Insets.right(6));
         filterRow.child(filterLbl);
 
@@ -1585,8 +1585,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 String colorCode = "§f"; // default white
                 String note = "";
                 if (listing.isFiltered) {
-                    colorCode = "§c"; // red for filtered outliers
-                    note = " (Filtered Outlier)";
+                    colorCode = "§c"; // red for filtered
+                    note = " (Filtered)";
                 } else if (listing.isPicked) {
                     colorCode = "§a"; // green for picked highest
                     note = " (Highest Valid)";
