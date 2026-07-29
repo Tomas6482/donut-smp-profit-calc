@@ -202,12 +202,13 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout tableHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         tableHeader.padding(Insets.of(6)).surface(Surface.flat(0x80232936));
 
+        tableHeader.child(UIComponents.label(Component.literal("")).sizing(Sizing.fixed(16), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Time")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Type")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(40), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Item")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(110), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Item")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(105), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Qty")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Unit Price")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(70), Sizing.content()));
-        tableHeader.child(UIComponents.label(Component.literal("Total")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(70), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Unit Price")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(65), Sizing.content()));
+        tableHeader.child(UIComponents.label(Component.literal("Total")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(65), Sizing.content()));
         tableHeader.child(UIComponents.label(Component.literal("Action")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(45), Sizing.content()));
 
         rightPanel.child(tableHeader);
@@ -1254,19 +1255,6 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             LabelComponent totalLbl = UIComponents.label(Component.literal((isSell ? "+" : "-") + CURRENCY_FORMAT.format(entry.totalPrice)));
             totalLbl.color(Color.ofRgb(isSell ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(65), Sizing.content());
 
-            FlowLayout actionBox = UIContainers.horizontalFlow(Sizing.fixed(60), Sizing.content());
-            actionBox.verticalAlignment(VerticalAlignment.CENTER);
-
-            ButtonComponent undoRowBtn = UIComponents.button(Component.literal("Undo"), btn -> {
-                for (Transaction t : entry.transactions) {
-                    ProfitTracker.getInstance().removeTransaction(t);
-                }
-                refreshData();
-            });
-            undoRowBtn.sizing(Sizing.fixed(38), Sizing.fixed(16));
-            undoRowBtn.margins(Insets.right(2));
-            actionBox.child(undoRowBtn);
-
             if (hasMultiple) {
                 ButtonComponent toggleBtn = UIComponents.button(Component.literal(isExpanded ? "▼" : "▶"), btn -> {
                     if (isExpanded) {
@@ -1276,9 +1264,22 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                     }
                     refreshData();
                 });
-                toggleBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
-                actionBox.child(toggleBtn);
+                toggleBtn.sizing(Sizing.fixed(14), Sizing.fixed(14));
+                toggleBtn.margins(Insets.right(2));
+                row.child(toggleBtn);
+            } else {
+                LabelComponent arrowSpacer = UIComponents.label(Component.literal(""));
+                arrowSpacer.sizing(Sizing.fixed(16), Sizing.content());
+                row.child(arrowSpacer);
             }
+
+            ButtonComponent undoRowBtn = UIComponents.button(Component.literal("Undo"), btn -> {
+                for (Transaction t : entry.transactions) {
+                    ProfitTracker.getInstance().removeTransaction(t);
+                }
+                refreshData();
+            });
+            undoRowBtn.sizing(Sizing.fixed(45), Sizing.fixed(16));
 
             row.child(timeLbl);
             row.child(typeLbl);
@@ -1286,7 +1287,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             row.child(amtLbl);
             row.child(unitLbl);
             row.child(totalLbl);
-            row.child(actionBox);
+            row.child(undoRowBtn);
 
             entryCard.child(row);
 
