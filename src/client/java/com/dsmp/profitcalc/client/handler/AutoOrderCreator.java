@@ -456,7 +456,11 @@ public class AutoOrderCreator {
     public static List<GuiEventListener> flattenWidgets(Screen screen) {
         List<GuiEventListener> list = new ArrayList<>();
         if (screen == null) return list;
-        java.util.Set<Object> visited = new java.util.HashSet<>();
+
+        // Identity-based visited set to prevent circular reference loops (parent <-> child)
+        java.util.Set<Object> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        visited.add(screen);
+
         for (GuiEventListener child : screen.children()) {
             collectWidgetsDeep(child, list, visited, 0);
         }
@@ -464,7 +468,10 @@ public class AutoOrderCreator {
     }
 
     private static void collectWidgetsDeep(Object obj, List<GuiEventListener> list, java.util.Set<Object> visited, int depth) {
-        if (obj == null || depth > 12 || !visited.add(obj)) return;
+        if (obj == null || depth > 6 || !visited.add(obj)) return;
+
+        String className = obj.getClass().getName();
+        if (shouldSkipObject(obj, className)) return;
 
         if (obj instanceof GuiEventListener listener) {
             if (!list.contains(listener)) {
@@ -481,61 +488,72 @@ public class AutoOrderCreator {
             } catch (Exception ignored) {}
         }
 
-        // 2. Deep reflection inspection of methods & fields for layout containers (e.g. ScrollableLayoutWidget.Container)
+        // 2. Reflection check for layout containers (e.g. ScrollableLayoutWidget.Container)
         try {
             Class<?> clazz = obj.getClass();
             while (clazz != null && clazz != Object.class) {
-                // Method check (methods returning children, layout contents, widgets, body, etc.)
-                for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
-                    if (m.getParameterCount() == 0 && !m.getReturnType().equals(Void.TYPE)) {
-                        String name = m.getName().toLowerCase(Locale.ROOT);
-                        if (name.contains("child") || name.contains("widget") || name.contains("element") ||
-                            name.contains("content") || name.contains("body") || name.contains("layout")) {
-                            try {
-                                m.setAccessible(true);
-                                Object res = m.invoke(obj);
-                                processReflectedChild(res, list, visited, depth + 1);
-                            } catch (Exception ignored) {}
-                        }
+                String cName = clazz.getName();
+                if (cName.startsWith("java.") || cName.startsWith("sun.") || cName.startsWith("org.lwjgl.")) {
+                    break;
+                }
+
+                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
+                    Class<?> fType = f.getType();
+                    if (isWidgetOrContainerType(fType)) {
+                        try {
+                            f.setAccessible(true);
+                            Object val = f.get(obj);
+                            processReflectedValue(val, list, visited, depth + 1);
+                        } catch (Exception ignored) {}
                     }
                 }
-
-                // Field check
-                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
-                    try {
-                        f.setAccessible(true);
-                        Object val = f.get(obj);
-                        processReflectedChild(val, list, visited, depth + 1);
-                    } catch (Exception ignored) {}
-                }
-
                 clazz = clazz.getSuperclass();
             }
         } catch (Exception ignored) {}
     }
 
-    private static void processReflectedChild(Object val, List<GuiEventListener> list, java.util.Set<Object> visited, int depth) {
-        if (val == null) return;
+    private static void processReflectedValue(Object val, List<GuiEventListener> list, java.util.Set<Object> visited, int depth) {
+        if (val == null || depth > 6) return;
 
         if (val instanceof Iterable<?> iterable) {
             for (Object item : iterable) {
-                if (item != null) processReflectedChild(item, list, visited, depth);
+                if (item != null) processReflectedValue(item, list, visited, depth + 1);
             }
         } else if (val.getClass().isArray()) {
             int len = java.lang.reflect.Array.getLength(val);
             for (int i = 0; i < len; i++) {
                 Object item = java.lang.reflect.Array.get(val, i);
-                if (item != null) processReflectedChild(item, list, visited, depth);
+                if (item != null) processReflectedValue(item, list, visited, depth + 1);
             }
         } else if (val instanceof GuiEventListener || val instanceof ContainerEventHandler) {
-            collectWidgetsDeep(val, list, visited, depth);
+            collectWidgetsDeep(val, list, visited, depth + 1);
         } else {
-            // Also inspect fields of inner layout containers (e.g. ScrollableLayoutWidget.Container or net.minecraft.* classes)
             String cName = val.getClass().getName();
-            if (cName.startsWith("net.minecraft.") || cName.startsWith("com.dsmp.") || cName.contains("$")) {
-                collectWidgetsDeep(val, list, visited, depth);
+            if (cName.contains("Layout") || cName.contains("Container") || cName.contains("Widget") || cName.contains("$")) {
+                collectWidgetsDeep(val, list, visited, depth + 1);
             }
         }
+    }
+
+    private static boolean shouldSkipObject(Object obj, String className) {
+        if (obj instanceof Minecraft || obj instanceof net.minecraft.client.multiplayer.ClientLevel ||
+            obj instanceof net.minecraft.world.entity.Entity || obj instanceof java.nio.file.Path ||
+            obj instanceof java.lang.Thread || obj instanceof java.lang.ClassLoader) {
+            return true;
+        }
+        return className.startsWith("java.nio.") || className.startsWith("sun.nio.") ||
+               className.startsWith("org.lwjgl.") || className.startsWith("com.mojang.blaze3d.");
+    }
+
+    private static boolean isWidgetOrContainerType(Class<?> type) {
+        if (GuiEventListener.class.isAssignableFrom(type) ||
+            ContainerEventHandler.class.isAssignableFrom(type) ||
+            java.util.Collection.class.isAssignableFrom(type) ||
+            type.isArray()) {
+            return true;
+        }
+        String name = type.getName();
+        return name.contains("Widget") || name.contains("Layout") || name.contains("Container") || name.contains("$");
     }
 
     public static boolean hasEditBox(Screen screen) {
