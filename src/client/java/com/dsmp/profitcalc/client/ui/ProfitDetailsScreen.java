@@ -1288,7 +1288,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                     subRow.verticalAlignment(VerticalAlignment.CENTER);
                     subRow.margins(Insets.vertical(1));
 
-                    LabelComponent bullet = UIComponents.label(Component.literal("↳ #" + subIdx + " [" + subTx.getFormattedTime() + "]"));
+                    LabelComponent bullet = UIComponents.label(Component.literal("- #" + subIdx + " [" + subTx.getFormattedTime() + "]"));
                     bullet.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(110), Sizing.content());
 
                     LabelComponent subQtyPrice = UIComponents.label(Component.literal((entry.isAh ? "1x AH" : subTx.getAmount() + "x") + " @ " + CURRENCY_FORMAT.format(subTx.getPricePerItem())));
