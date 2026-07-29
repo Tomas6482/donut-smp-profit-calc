@@ -650,7 +650,10 @@ public class AutoOrderCreator {
 
     private static String getCleanWidgetText(AbstractWidget widget) {
         if (widget == null || widget.getMessage() == null) return "";
-        return widget.getMessage().getString().replaceAll("§[0-9a-fk-or]", "").trim();
+        String raw = widget.getMessage().getString();
+        // Strip minecraft color codes and item icon tags like [item/acacia_boat@items] or [block/oak_log]
+        String clean = raw.replaceAll("§[0-9a-fk-or]", "").replaceAll("\\[.*?\\]", "").trim();
+        return clean;
     }
 
     public static void pressButton(Button btn) {
