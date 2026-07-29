@@ -125,17 +125,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         headerRight.margins(Insets.left(20));
         headerRight.verticalAlignment(VerticalAlignment.CENTER);
 
-        ButtonComponent toolsDropdownBtn = UIComponents.button(Component.literal("Tools" + (isToolsDropdownOpen ? " ▲" : " ▼")), btn -> {
-            isToolsDropdownOpen = !isToolsDropdownOpen;
-            isDropdownOpen = false;
-            Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
-        });
+        ButtonComponent toolsDropdownBtn = UIComponents.button(Component.literal("Tools ▾"), btn -> openToolsDropdownModal());
         toolsDropdownBtn.margins(Insets.right(4));
 
-        ButtonComponent settingsBtn = UIComponents.button(Component.literal("Settings ⚙"), btn -> {
-            isToolsDropdownOpen = false;
-            openSettingsModal();
-        });
+        ButtonComponent settingsBtn = UIComponents.button(Component.literal("Settings ⚙"), btn -> openSettingsModal());
         settingsBtn.margins(Insets.right(4));
 
         ButtonComponent undoLastBtn = UIComponents.button(Component.literal("Undo"), btn -> {
@@ -157,38 +150,6 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         headerBar.child(title);
         headerBar.child(headerRight);
         mainCard.child(headerBar);
-
-        if (isToolsDropdownOpen) {
-            FlowLayout toolsMenu = UIContainers.verticalFlow(Sizing.fixed(140), Sizing.content());
-            toolsMenu.surface(Surface.flat(0xF0101216).and(Surface.outline(0xFF333B48)))
-                    .padding(Insets.of(4))
-                    .margins(Insets.of(2, 0, 4, 0));
-
-            ButtonComponent bestDealOpt = UIComponents.button(
-                Component.literal("🔍 Best Deal Finder"),
-                b -> {
-                    isToolsDropdownOpen = false;
-                    openBestDealFinderModal(null);
-                }
-            );
-            bestDealOpt.sizing(Sizing.fill(100), Sizing.fixed(16));
-            bestDealOpt.margins(Insets.vertical(1));
-
-            ButtonComponent dumperOpt = UIComponents.button(
-                Component.literal("📋 Price Dumper"),
-                b -> {
-                    isToolsDropdownOpen = false;
-                    openPriceDumperSetupModal();
-                }
-            );
-            dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(16));
-            dumperOpt.margins(Insets.vertical(1));
-
-            toolsMenu.child(bestDealOpt);
-            toolsMenu.child(dumperOpt);
-
-            mainCard.child(toolsMenu);
-        }
 
         FlowLayout statsSummaryBar = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         statsSummaryBar.margins(Insets.of(8, 8, 0, 0));
@@ -279,48 +240,10 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             default -> "Bone Flip";
         };
 
-        String arrow = isDropdownOpen ? " ▲" : " ▼";
-        ButtonComponent flipDropdownBtn = UIComponents.button(Component.literal("Flip: " + activeFlipTitle + arrow), btn -> {
-            isDropdownOpen = !isDropdownOpen;
-            Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
-        });
+        ButtonComponent flipDropdownBtn = UIComponents.button(Component.literal("Flip: " + activeFlipTitle + " ▾"), btn -> openFlipDropdownModal());
         flipDropdownBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
         flipRow.child(flipDropdownBtn);
         leftPanel.child(flipRow);
-
-        // If Dropdown is open, render options list directly under the button matching its exact width!
-        if (isDropdownOpen) {
-            FlowLayout dropdownMenu = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
-            dropdownMenu.surface(Surface.flat(0xF0101216).and(Surface.outline(0xFF333B48)))
-                    .padding(Insets.of(4))
-                    .margins(Insets.bottom(6));
-
-            String[] options = {
-                "Bone Flip", "Kelp Flip", "Oak Log Flip",
-                "Sticky Piston Flip", "Golden Apple Flip", "Bookshelf Flip", "Trapdoor Flip"
-            };
-
-            for (int i = 0; i < options.length; i++) {
-                final int tabIdx = i;
-                String optText = options[i];
-                boolean isSelected = (selectedTab == tabIdx);
-
-                ButtonComponent optBtn = UIComponents.button(
-                    Component.literal((isSelected ? "✔ " : "   ") + optText),
-                    b -> {
-                        selectedTab = tabIdx;
-                        config.setSavedSelectedTab(tabIdx);
-                        isDropdownOpen = false;
-                        Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
-                    }
-                );
-                optBtn.sizing(Sizing.fill(100), Sizing.fixed(16));
-                optBtn.margins(Insets.vertical(1));
-                dropdownMenu.child(optBtn);
-            }
-
-            leftPanel.child(dropdownMenu);
-        }
 
         // 2. Dynamic Input Fields based on Flip Selection
         if (selectedTab == 0) {
@@ -1387,6 +1310,117 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             transactionListContainer.child(entryCard);
             rowIdx++;
         }
+    }
+
+    public void openToolsDropdownModal() {
+        if (uiAdapter == null) return;
+        closeSettingsModal();
+
+        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(200), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
+                .padding(Insets.of(10));
+
+        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Tools Menu"));
+        modalTitle.color(Color.ofRgb(0xF59E0B));
+
+        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
+        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
+        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+        closeSpacer.child(closeBtn);
+
+        modalHeader.child(modalTitle);
+        modalHeader.child(closeSpacer);
+        modalCard.child(modalHeader);
+        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+
+        ButtonComponent bestDealOpt = UIComponents.button(
+            Component.literal("🔍 Best Deal Finder"),
+            b -> {
+                closeSettingsModal();
+                openBestDealFinderModal(null);
+            }
+        );
+        bestDealOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
+        bestDealOpt.margins(Insets.vertical(2));
+
+        ButtonComponent dumperOpt = UIComponents.button(
+            Component.literal("📋 Price Dumper"),
+            b -> {
+                closeSettingsModal();
+                openPriceDumperSetupModal();
+            }
+        );
+        dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(22));
+        dumperOpt.margins(Insets.vertical(2));
+
+        modalCard.child(bestDealOpt);
+        modalCard.child(dumperOpt);
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
+    }
+
+    public void openFlipDropdownModal() {
+        if (uiAdapter == null) return;
+        closeSettingsModal();
+
+        int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
+
+        FlowLayout modalCard = UIContainers.verticalFlow(Sizing.fixed(220), Sizing.content());
+        modalCard.surface(Surface.flat(currentThemeHex).and(Surface.outline(0xFFF59E0B)))
+                .padding(Insets.of(10));
+
+        FlowLayout modalHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        modalHeader.verticalAlignment(VerticalAlignment.CENTER);
+
+        LabelComponent modalTitle = UIComponents.label(Component.literal("Select Flip Calculator"));
+        modalTitle.color(Color.ofRgb(0xF59E0B));
+
+        FlowLayout closeSpacer = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        closeSpacer.horizontalAlignment(HorizontalAlignment.RIGHT);
+        ButtonComponent closeBtn = UIComponents.button(Component.literal("✕"), btn -> closeSettingsModal());
+        closeBtn.sizing(Sizing.fixed(18), Sizing.fixed(16));
+        closeSpacer.child(closeBtn);
+
+        modalHeader.child(modalTitle);
+        modalHeader.child(closeSpacer);
+        modalCard.child(modalHeader);
+        modalCard.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(4)));
+
+        String[] options = {
+            "Bone Flip", "Kelp Flip", "Oak Log Flip",
+            "Sticky Piston Flip", "Golden Apple Flip", "Bookshelf Flip", "Trapdoor Flip"
+        };
+
+        for (int i = 0; i < options.length; i++) {
+            final int tabIdx = i;
+            String optText = options[i];
+            boolean isSelected = (selectedTab == tabIdx);
+
+            ButtonComponent optBtn = UIComponents.button(
+                Component.literal((isSelected ? "✔ " : "   ") + optText),
+                b -> {
+                    selectedTab = tabIdx;
+                    ProfitConfig.getInstance().setSavedSelectedTab(tabIdx);
+                    closeSettingsModal();
+                    Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
+                }
+            );
+            optBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
+            optBtn.margins(Insets.vertical(1));
+            modalCard.child(optBtn);
+        }
+
+        activeOverlayModal = UIContainers.overlay(modalCard);
+        activeOverlayModal.closeOnClick(true);
+        uiAdapter.rootComponent.child(activeOverlayModal);
     }
 
     public void openPriceDumperSetupModal() {
