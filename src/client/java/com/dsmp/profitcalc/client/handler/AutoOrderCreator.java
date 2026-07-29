@@ -31,7 +31,6 @@ public class AutoOrderCreator {
         CLICK_NEW_ORDER_SLOT,     // In "Orders -> Your Orders", click first "New Order" slot in 0..17
         WAIT_CHOOSE_ITEM_SCREEN,  // Waiting for "Choose Item" dialog screen
         TYPING_ITEM_SEARCH,       // In Choose Item screen, typing item into search box
-        CLICKING_SEARCH_BUTTON,   // Clicking the "Search" button below text box
         CLICKING_ITEM_BUTTON,     // Finding and clicking matching item button in grid
         WAIT_AMOUNT_SCREEN,       // Waiting for "How many?" dialog screen
         TYPING_AMOUNT,            // Setting amount in EditBox
@@ -205,27 +204,9 @@ public class AutoOrderCreator {
                         String searchQuery = formatSearchQuery(targetItemName);
                         LOGGER.info("[Auto Order Creator] Typing item search query '{}' into EditBox", searchQuery);
                         editBox.setValue(searchQuery);
-                        editBox.setFocused(true);
 
-                        state = State.CLICKING_SEARCH_BUTTON;
-                        stateStartTime = now;
-                        stateTicks = 0;
-                    }
-                }
-            }
-
-            case CLICKING_SEARCH_BUTTON -> {
-                if (stateTicks >= 2 && screen != null) {
-                    Button searchBtn = findButtonByLabel(screen, "Search");
-                    if (searchBtn != null) {
-                        LOGGER.info("[Auto Order Creator] Clicking 'Search' button to filter item grid");
-                        pressButton(searchBtn);
-
-                        state = State.CLICKING_ITEM_BUTTON;
-                        stateStartTime = now;
-                        stateTicks = 0;
-                    } else {
-                        // Fallback if no Search button exists
+                        // Grid filters live as you type — go straight to item click, the 20-tick
+                        // settle wait in CLICKING_ITEM_BUTTON covers the filter refresh delay.
                         state = State.CLICKING_ITEM_BUTTON;
                         stateStartTime = now;
                         stateTicks = 0;
@@ -257,6 +238,13 @@ public class AutoOrderCreator {
             }
 
             case WAIT_AMOUNT_SCREEN -> {
+                // Diagnostic: log once per second so stalls are visible
+                if (stateTicks % 20 == 0) {
+                    LOGGER.info("[Auto Order Creator] Still waiting for amount screen — current screen: {} / title: '{}' / same={}",
+                            screen == null ? "null" : screen.getClass().getSimpleName(),
+                            getScreenTitle(screen),
+                            screen == lastClickedItemScreen);
+                }
                 // Wait for a NEW screen to open (different from the Choose Item screen)
                 if (screen != null && screen != lastClickedItemScreen) {
                     String title = getScreenTitle(screen);
@@ -677,30 +665,12 @@ public class AutoOrderCreator {
 
     public static void pressButton(Button btn) {
         if (btn == null) return;
-        LOGGER.info("[Auto Order Creator] Executing pressButton on button '{}' (class: {})",
+        LOGGER.info("[Auto Order Creator] Pressing button '{}' (class: {})",
                 getCleanWidgetText(btn), btn.getClass().getName());
         try {
-            Class<?> clazz = btn.getClass();
-            while (clazz != null && clazz != Object.class) {
-                for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
-                    if (m.getName().equals("onPress")) {
-                        m.setAccessible(true);
-                        Class<?>[] pTypes = m.getParameterTypes();
-                        if (pTypes.length == 0) {
-                            m.invoke(btn);
-                            LOGGER.info("[Auto Order Creator] Successfully invoked onPress() [0 args] via reflection!");
-                            return;
-                        } else if (pTypes.length == 1) {
-                            m.invoke(btn, (Object) null);
-                            LOGGER.info("[Auto Order Creator] Successfully invoked onPress(null) [1 arg] via reflection!");
-                            return;
-                        }
-                    }
-                }
-                clazz = clazz.getSuperclass();
-            }
-        } catch (Exception e) {
-            LOGGER.error("[Auto Order Creator] Error pressing button via reflection", e);
+            btn.onPress(null);
+        } catch (Throwable t) {
+            LOGGER.error("[Auto Order Creator] Error executing btn.onPress(null)", t);
         }
     }
 }
