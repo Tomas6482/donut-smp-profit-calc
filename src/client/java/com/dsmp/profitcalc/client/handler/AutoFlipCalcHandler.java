@@ -70,10 +70,7 @@ public class AutoFlipCalcHandler {
     private static int pagesScanned = 0;
     private static long lastActionTime = 0;
 
-    // Map to accumulate raw listings for each target key during multi-page scan
     private static final Map<String, List<Listing>> accumulatedListings = new HashMap<>();
-
-    // Final computed top-3 average prices to save
     private static final Map<String, Double> finalComputedPrices = new HashMap<>();
 
     public static void stop() {
@@ -313,7 +310,6 @@ public class AutoFlipCalcHandler {
     }
 
     private static void processAndStoreTaskResults(String targetKey) {
-        // Collect all keys matching targetKey or populated during this task
         List<String> keysToProcess = new ArrayList<>();
         if (targetKey.equals("kelp")) {
             keysToProcess.add("raw_kelp");
@@ -358,14 +354,15 @@ public class AutoFlipCalcHandler {
                 }
             }
 
-            // Fallback if filtering dropped everything
             if (filteredListings.isEmpty()) {
                 filteredListings = rawListings;
                 outlierListings.clear();
             }
 
-            // 3. Take Top 3 Lowest Prices (or highest for buy orders if desired; top 3 lowest asking prices)
-            filteredListings.sort((a, b) -> Double.compare(a.price, b.price));
+            // 3. CRITICAL FIX: Sort DESCENDING by price (highest buy order prices first)
+            // /order listings are buy orders offered by buyers — the HIGHEST prices are the best ones to sell into!
+            filteredListings.sort((a, b) -> Double.compare(b.price, a.price));
+
             int top3Count = Math.min(3, filteredListings.size());
             double sumTop3 = 0.0;
             List<Listing> top3List = new ArrayList<>();
@@ -377,14 +374,15 @@ public class AutoFlipCalcHandler {
             double avgTop3 = sumTop3 / top3Count;
             finalComputedPrices.put(key, avgTop3);
 
-            // Detailed logging for inspection
+            // Comprehensive logging
             LOGGER.info("[Auto Flip] Summary for key '{}':", key);
-            LOGGER.info("  Raw Matches ({}) : {}", rawListings.size(), rawListings);
-            LOGGER.info("  Median Qty      : {} (Cutoff >= {})", medianQty, cutoffQty);
-            LOGGER.info("  Outliers Dropped: {}", outlierListings);
-            LOGGER.info("  Filtered Set ({}): {}", filteredListings.size(), filteredListings);
-            LOGGER.info("  Top 3 Used      : {}", top3List);
-            LOGGER.info("  Final Top-3 Avg : ${}", String.format("%.2f", avgTop3));
+            LOGGER.info("  Raw Matches ({})       : {}", rawListings.size(), rawListings);
+            LOGGER.info("  Median Qty            : {} (Cutoff >= {})", medianQty, cutoffQty);
+            LOGGER.info("  Outliers Dropped ({})  : {}", outlierListings.size(), outlierListings);
+            LOGGER.info("  Filtered Set ({})      : {}", filteredListings.size(), filteredListings);
+            LOGGER.info("  Sort Order            : DESCENDING (Highest Buy Orders First)");
+            LOGGER.info("  Top 3 Used (HIGHEST)  : {}", top3List);
+            LOGGER.info("  Final Top-3 Avg Price : ${}", String.format("%.2f", avgTop3));
         }
     }
 
@@ -464,16 +462,24 @@ public class AutoFlipCalcHandler {
         if (stack.isEmpty()) return 1.0;
         double stackCount = stack.getCount();
 
-        Pattern qtyPattern = Pattern.compile("(?:Amount|Qty|Quantity|Requesting|Count|Size)\\s*:?\\s*([0-9.,]+[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
+        Pattern[] qtyPatterns = new Pattern[] {
+            Pattern.compile("(?:Amount|Qty|Quantity|Requesting|Count|Size|Items|Buying|Left|Total|Order|Orders|Remaining|Filled)\\s*:?\\s*([0-9.,]+[kmbKMB]?)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("([0-9.,]+[kmbKMB]?)\\s*(?:x|items|blocks|amount|qty|quantity|left|remaining|orders)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("x\\s*([0-9.,]+[kmbKMB]?)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("([0-9.,]+[kmbKMB]?)\\s*x", Pattern.CASE_INSENSITIVE)
+        };
 
         try {
             var loreComponent = stack.get(net.minecraft.core.component.DataComponents.LORE);
             if (loreComponent != null) {
                 for (net.minecraft.network.chat.Component comp : loreComponent.lines()) {
-                    Matcher m = qtyPattern.matcher(comp.getString());
-                    if (m.find()) {
-                        double parsed = parseFormattedMoney(m.group(1));
-                        if (parsed > 0) return Math.max(stackCount, parsed);
+                    String line = comp.getString().trim();
+                    for (Pattern p : qtyPatterns) {
+                        Matcher m = p.matcher(line);
+                        if (m.find()) {
+                            double parsed = parseFormattedMoney(m.group(1));
+                            if (parsed > 0) return Math.max(stackCount, parsed);
+                        }
                     }
                 }
             }
@@ -486,10 +492,13 @@ public class AutoFlipCalcHandler {
                     net.minecraft.world.item.TooltipFlag.NORMAL
             );
             for (net.minecraft.network.chat.Component lineComponent : tooltip) {
-                Matcher m = qtyPattern.matcher(lineComponent.getString());
-                if (m.find()) {
-                    double parsed = parseFormattedMoney(m.group(1));
-                    if (parsed > 0) return Math.max(stackCount, parsed);
+                String line = lineComponent.getString().trim();
+                for (Pattern p : qtyPatterns) {
+                    Matcher m = p.matcher(line);
+                    if (m.find()) {
+                        double parsed = parseFormattedMoney(m.group(1));
+                        if (parsed > 0) return Math.max(stackCount, parsed);
+                    }
                 }
             }
         } catch (Exception ignored) {}
@@ -499,7 +508,6 @@ public class AutoFlipCalcHandler {
 
     private static double parsePriceFromStack(ItemStack stack) {
         if (stack.isEmpty()) return 0.0;
-        // Relaxed price pattern matching any line containing $ followed by a number
         Pattern pricePattern = Pattern.compile("\\$\\s*([0-9.,]+(?:e[+-]?[0-9]+)?\\s*[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
 
         try {
