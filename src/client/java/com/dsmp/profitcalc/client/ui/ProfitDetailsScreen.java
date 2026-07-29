@@ -1584,24 +1584,28 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         modalCard.child(searchBtn);
 
         // Result Panel
-        BestDealFinderHandler.BestDealResult latest = BestDealFinderHandler.getLatestResult();
+        BestDealFinderHandler.BestDealBundle latest = BestDealFinderHandler.getLatestBundle();
         if (latest != null || statusOverride != null) {
             FlowLayout resultCard = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
             resultCard.surface(Surface.flat(0x40181C24).and(Surface.outline(0xFF333B48)))
                     .padding(Insets.of(6));
 
             if (latest != null) {
-                LabelComponent rItem = UIComponents.label(Component.literal("Item: " + latest.matchedItemName));
+                LabelComponent rItem = UIComponents.label(Component.literal("Item: " + latest.itemName));
                 rItem.color(Color.ofRgb(0xF3F4F6));
 
-                LabelComponent rPrice = UIComponents.label(Component.literal("Price/Unit: $" + DEC_FMT.format(latest.pricePerUnit) + " (Total: $" + DEC_FMT.format(latest.totalPrice) + ")"));
+                LabelComponent rType = UIComponents.label(Component.literal("Deal Type: " + latest.getSummaryText()));
+                rType.color(Color.ofRgb(0x3B82F6));
+
+                LabelComponent rPrice = UIComponents.label(Component.literal("Eff. Price/Unit: $" + DEC_FMT.format(latest.effectivePricePerUnit) + " (Total: $" + DEC_FMT.format(latest.combinedTotalCost) + ")"));
                 rPrice.color(Color.ofRgb(0x10B981));
 
-                String statusStr = latest.isQualifying ? "✓ Found" : ("⚠ Best available: " + latest.quantity + "x (less than requested " + latest.requestedQty + "x)");
+                String statusStr = latest.isQualifying ? "✓ Found" : ("⚠ Best available: " + latest.combinedTotalQty + "x (less than requested " + latest.requestedQty + "x)");
                 LabelComponent rStatus = UIComponents.label(Component.literal("Status: " + statusStr));
                 rStatus.color(Color.ofRgb(latest.isQualifying ? 0x10B981 : 0xF59E0B));
 
                 resultCard.child(rItem);
+                resultCard.child(rType);
                 resultCard.child(rPrice);
                 resultCard.child(rStatus);
             } else {
@@ -1618,8 +1622,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         uiAdapter.rootComponent.child(activeOverlayModal);
     }
 
-    public void openBestDealConfirmationModal(BestDealFinderHandler.BestDealResult deal, boolean capExceeded) {
-        if (uiAdapter == null || deal == null) return;
+    public void openBestDealConfirmationModal(BestDealFinderHandler.BestDealBundle bundle, boolean capExceeded) {
+        if (uiAdapter == null || bundle == null) return;
         closeSettingsModal();
 
         int currentThemeHex = ProfitConfig.getInstance().getThemeColorHex();
@@ -1636,7 +1640,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             LabelComponent capWarn = UIComponents.label(Component.literal("⚠ Price/Unit exceeds your Max Price Cap!"));
             capWarn.color(Color.ofRgb(0xEF4444)).margins(Insets.bottom(6));
             modalCard.child(capWarn);
-        } else if (!deal.isQualifying) {
+        } else if (!bundle.isQualifying) {
             LabelComponent qtyWarn = UIComponents.label(Component.literal("⚠ Best available is less than requested quantity!"));
             qtyWarn.color(Color.ofRgb(0xF59E0B)).margins(Insets.bottom(6));
             modalCard.child(qtyWarn);
@@ -1644,14 +1648,35 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         FlowLayout infoBox = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
         infoBox.surface(Surface.flat(0x40181C24).and(Surface.outline(0xFF262C36)))
-                .padding(Insets.of(6)).margins(Insets.bottom(10));
+                .padding(Insets.of(6)).margins(Insets.bottom(8));
 
-        infoBox.child(UIComponents.label(Component.literal("Item: " + deal.matchedItemName)).color(Color.ofRgb(0xF3F4F6)));
-        infoBox.child(UIComponents.label(Component.literal("Quantity: " + deal.quantity + "x (Requested: " + deal.requestedQty + "x)")).color(Color.ofRgb(0xD1D5DB)));
-        infoBox.child(UIComponents.label(Component.literal("Price / Unit: $" + DEC_FMT.format(deal.pricePerUnit))).color(Color.ofRgb(0xF59E0B)));
-        infoBox.child(UIComponents.label(Component.literal("Total Cost: $" + DEC_FMT.format(deal.totalPrice))).color(Color.ofRgb(0x10B981)));
+        infoBox.child(UIComponents.label(Component.literal("Item: " + bundle.itemName)).color(Color.ofRgb(0xF3F4F6)));
+        infoBox.child(UIComponents.label(Component.literal("Quantity: " + bundle.combinedTotalQty + "x (Requested: " + bundle.requestedQty + "x)")).color(Color.ofRgb(0xD1D5DB)));
+        infoBox.child(UIComponents.label(Component.literal("Deal Type: " + bundle.getSummaryText())).color(Color.ofRgb(0x3B82F6)));
+        infoBox.child(UIComponents.label(Component.literal("Eff. Price / Unit: $" + DEC_FMT.format(bundle.effectivePricePerUnit))).color(Color.ofRgb(0xF59E0B)));
+        infoBox.child(UIComponents.label(Component.literal("Combined Total: $" + DEC_FMT.format(bundle.combinedTotalCost))).color(Color.ofRgb(0x10B981)));
 
         modalCard.child(infoBox);
+
+        if (bundle.isMultiListing) {
+            FlowLayout listHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+            listHeader.child(UIComponents.label(Component.literal("Listings in Bundle (" + bundle.listings.size() + "):")).color(Color.ofRgb(0x9CA3AF)));
+            listHeader.margins(Insets.bottom(2));
+            modalCard.child(listHeader);
+
+            FlowLayout rowsLayout = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+            int idx = 1;
+            for (BestDealFinderHandler.BestDealResult l : bundle.listings) {
+                LabelComponent r = UIComponents.label(Component.literal(
+                        "#" + idx + ": " + l.quantity + "x for $" + DEC_FMT.format(l.totalPrice) + " ($" + DEC_FMT.format(l.pricePerUnit) + "/ea, Page " + l.pageNumber + ")"));
+                r.color(Color.ofRgb(0xD1D5DB)).margins(Insets.vertical(1));
+                rowsLayout.child(r);
+                idx++;
+            }
+            ScrollContainer<FlowLayout> scroll = UIContainers.verticalScroll(Sizing.fill(100), Sizing.fixed(60), rowsLayout);
+            scroll.margins(Insets.bottom(8));
+            modalCard.child(scroll);
+        }
 
         FlowLayout actionRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         actionRow.horizontalAlignment(HorizontalAlignment.CENTER);
@@ -1659,7 +1684,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         ButtonComponent yesBtn = UIComponents.button(Component.literal("Yes, Buy Now"), b -> {
             closeSettingsModal();
             Minecraft.getInstance().setScreen(null);
-            BestDealFinderHandler.confirmAndBuyDeal(deal);
+            BestDealFinderHandler.confirmAndBuyBundle(bundle);
         });
         yesBtn.sizing(Sizing.fill(48), Sizing.fixed(20));
         yesBtn.margins(Insets.right(6));

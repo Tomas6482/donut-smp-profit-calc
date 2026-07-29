@@ -1,9 +1,9 @@
 package com.dsmp.profitcalc.client.handler;
 
-import com.dsmp.profitcalc.client.config.ProfitConfig;
 import com.dsmp.profitcalc.client.ui.ProfitDetailsScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -17,7 +17,11 @@ import org.slf4j.LoggerFactory;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Queue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,11 +65,52 @@ public class BestDealFinderHandler {
         }
     }
 
+    public static class BestDealBundle {
+        public final String targetQuery;
+        public final String itemName;
+        public final List<BestDealResult> listings;
+        public final double combinedTotalCost;
+        public final int combinedTotalQty;
+        public final double effectivePricePerUnit;
+        public final boolean isQualifying;
+        public final int requestedQty;
+        public final boolean isMultiListing;
+
+        public BestDealBundle(String targetQuery, String itemName, List<BestDealResult> listings,
+                              double combinedTotalCost, int combinedTotalQty, double effectivePricePerUnit,
+                              boolean isQualifying, int requestedQty) {
+            this.targetQuery = targetQuery;
+            this.itemName = itemName;
+            this.listings = listings;
+            this.combinedTotalCost = combinedTotalCost;
+            this.combinedTotalQty = combinedTotalQty;
+            this.effectivePricePerUnit = effectivePricePerUnit;
+            this.isQualifying = isQualifying;
+            this.requestedQty = requestedQty;
+            this.isMultiListing = listings.size() > 1;
+        }
+
+        public String getSummaryText() {
+            if (listings.isEmpty()) return "No listings";
+            if (!isMultiListing) {
+                return "Single Listing (" + listings.get(0).quantity + "x)";
+            }
+            Map<Integer, Integer> stackCounts = new HashMap<>();
+            for (BestDealResult l : listings) {
+                stackCounts.put(l.quantity, stackCounts.getOrDefault(l.quantity, 0) + 1);
+            }
+            List<String> parts = new ArrayList<>();
+            for (Map.Entry<Integer, Integer> entry : stackCounts.entrySet()) {
+                parts.add(entry.getValue() + "x " + entry.getKey() + "x");
+            }
+            return "Combined Listings (" + listings.size() + " listings: " + String.join(", ", parts) + ")";
+        }
+    }
+
     private enum State {
         IDLE,
         SCANNING,
-        NAVIGATING_TO_BUY,
-        BUYING
+        NAVIGATING_TO_BUY
     }
 
     private static State currentState = State.IDLE;
@@ -83,15 +128,19 @@ public class BestDealFinderHandler {
     private static final List<BestDealResult> allMatchesFound = new ArrayList<>();
     private static final List<BestDealResult> qualifyingMatchesFound = new ArrayList<>();
 
-    private static BestDealResult latestResult = null;
-    private static BestDealResult pendingBuyDeal = null;
+    private static BestDealBundle latestBundle = null;
+
+    private static final Queue<BestDealResult> purchaseQueue = new LinkedList<>();
+    private static BestDealResult currentPurchaseDeal = null;
+    private static int totalPurchasesInChain = 0;
+    private static int successfulPurchasesCount = 0;
 
     public static boolean isRunning() {
         return running;
     }
 
-    public static BestDealResult getLatestResult() {
-        return latestResult;
+    public static BestDealBundle getLatestBundle() {
+        return latestBundle;
     }
 
     public static void stop() {
@@ -101,7 +150,10 @@ public class BestDealFinderHandler {
         consecutiveEmptyPages = 0;
         allMatchesFound.clear();
         qualifyingMatchesFound.clear();
-        pendingBuyDeal = null;
+        purchaseQueue.clear();
+        currentPurchaseDeal = null;
+        totalPurchasesInChain = 0;
+        successfulPurchasesCount = 0;
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {
             mc.player.displayClientMessage(Component.literal("§e[Best Deal Finder] Search cancelled."), true);
@@ -141,10 +193,13 @@ public class BestDealFinderHandler {
 
         allMatchesFound.clear();
         qualifyingMatchesFound.clear();
+        purchaseQueue.clear();
+        currentPurchaseDeal = null;
+        totalPurchasesInChain = 0;
+        successfulPurchasesCount = 0;
         pagesScanned = 0;
         consecutiveEmptyPages = 0;
-        latestResult = null;
-        pendingBuyDeal = null;
+        latestBundle = null;
 
         running = true;
         currentState = State.SCANNING;
@@ -173,7 +228,11 @@ public class BestDealFinderHandler {
         // Timeout check
         if (now - lastActionTime > TIMEOUT_LIMIT_MS) {
             LOGGER.warn("[Best Deal Finder] Search timed out during state: {}", currentState);
-            finishSearch(mc);
+            if (currentState == State.NAVIGATING_TO_BUY) {
+                abortPurchaseQueue(mc, "Timed out waiting for container screen");
+            } else {
+                finishSearch(mc);
+            }
             return;
         }
 
@@ -219,21 +278,40 @@ public class BestDealFinderHandler {
                 }
             }
         } else if (currentState == State.NAVIGATING_TO_BUY) {
-            if (pendingBuyDeal == null) {
+            if (currentPurchaseDeal == null) {
                 running = false;
                 currentState = State.IDLE;
                 return;
             }
 
             if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
-                long delayRequired = INITIAL_COMMAND_DELAY_MS;
+                long delayRequired = (pagesScanned == 0) ? INITIAL_COMMAND_DELAY_MS : PAGE_TURN_DELAY_MS;
                 if (now - lastActionTime < delayRequired) return;
 
+                int currentPage = pagesScanned + 1;
+                if (currentPage < currentPurchaseDeal.pageNumber) {
+                    if (isNextPageAvailable(containerScreen)) {
+                        pagesScanned++;
+                        lastActionTime = now;
+                        int containerId = containerScreen.getMenu().containerId;
+                        mc.gameMode.handleInventoryMouseClick(containerId, 53, 0, ClickType.PICKUP, mc.player);
+                        return;
+                    } else {
+                        LOGGER.warn("[Best Deal Finder] Target Page {} unreachable, aborting remaining queue!", currentPurchaseDeal.pageNumber);
+                        abortPurchaseQueue(mc, "Target page unreachable");
+                        return;
+                    }
+                }
+
                 // Execute slot re-verification & purchase click
-                executePurchaseClick(mc, containerScreen, pendingBuyDeal);
-                running = false;
-                currentState = State.IDLE;
-                pendingBuyDeal = null;
+                boolean success = executePurchaseClick(mc, containerScreen, currentPurchaseDeal);
+                if (success) {
+                    successfulPurchasesCount++;
+                    lastActionTime = now;
+                    processNextPurchaseQueueStep(mc);
+                } else {
+                    abortPurchaseQueue(mc, "Listing details changed or item unavailable");
+                }
             }
         }
     }
@@ -304,18 +382,9 @@ public class BestDealFinderHandler {
         running = false;
         currentState = State.IDLE;
 
-        if (qualifyingMatchesFound.size() > 0) {
-            qualifyingMatchesFound.sort((a, b) -> Double.compare(a.pricePerUnit, b.pricePerUnit));
-            latestResult = qualifyingMatchesFound.get(0);
-        } else if (allMatchesFound.size() > 0) {
-            allMatchesFound.sort((a, b) -> Double.compare(a.pricePerUnit, b.pricePerUnit));
-            latestResult = allMatchesFound.get(0);
-        } else {
-            latestResult = null;
-        }
-
-        if (latestResult == null) {
+        if (allMatchesFound.isEmpty()) {
             LOGGER.warn("[Best Deal Finder] Zero matches found for item '{}'", currentQuery);
+            latestBundle = null;
             if (mc.player != null) {
                 mc.player.displayClientMessage(Component.literal("§c[Best Deal Finder] No listings found for '" + currentQuery + "'."), true);
             }
@@ -327,15 +396,95 @@ public class BestDealFinderHandler {
             return;
         }
 
-        boolean capExceeded = (maxPriceCap > 0 && latestResult.pricePerUnit > maxPriceCap);
+        // 1. Calculate Median Price Per Unit
+        List<Double> unitPrices = new ArrayList<>();
+        for (BestDealResult r : allMatchesFound) {
+            unitPrices.add(r.pricePerUnit);
+        }
+        Collections.sort(unitPrices);
+        double medianUnitPrice;
+        int n = unitPrices.size();
+        if (n % 2 == 1) {
+            medianUnitPrice = unitPrices.get(n / 2);
+        } else {
+            medianUnitPrice = (unitPrices.get(n / 2 - 1) + unitPrices.get(n / 2)) / 2.0;
+        }
+
+        double scamThreshold = medianUnitPrice * 5.0; // Scam Multiplier = 5.0
+
+        // 2. Anti-Scam Filter
+        List<BestDealResult> cleanListings = new ArrayList<>();
+        for (BestDealResult r : allMatchesFound) {
+            if (r.pricePerUnit <= scamThreshold) {
+                cleanListings.add(r);
+            } else {
+                LOGGER.info("[Best Deal Finder] Filtered out scam listing: {} x{} @ ${}/ea (Baseline median: ${})",
+                        r.matchedItemName, r.quantity, String.format("%.2f", r.pricePerUnit), String.format("%.2f", medianUnitPrice));
+            }
+        }
+
+        if (cleanListings.isEmpty()) {
+            cleanListings = allMatchesFound; // Fallback if all were flagged
+        }
+
+        // Sort clean listings ascending by unit price
+        cleanListings.sort((a, b) -> Double.compare(a.pricePerUnit, b.pricePerUnit));
+
+        // 3. Single-stack cheapest qualifying listing
+        BestDealResult bestSingleQualifying = null;
+        for (BestDealResult r : cleanListings) {
+            if (r.quantity >= targetQuantity) {
+                if (bestSingleQualifying == null || r.pricePerUnit < bestSingleQualifying.pricePerUnit) {
+                    bestSingleQualifying = r;
+                }
+            }
+        }
+
+        // 4. Greedy Combination Bundle Solver
+        List<BestDealResult> greedyListings = new ArrayList<>();
+        int accumulatedQty = 0;
+        double accumulatedCost = 0.0;
+
+        for (BestDealResult r : cleanListings) {
+            greedyListings.add(r);
+            accumulatedQty += r.quantity;
+            accumulatedCost += r.totalPrice;
+            if (accumulatedQty >= targetQuantity) {
+                break;
+            }
+        }
+
+        double greedyEffectiveUnit = accumulatedQty > 0 ? (accumulatedCost / (double) accumulatedQty) : 0.0;
+        boolean greedyQualifying = accumulatedQty >= targetQuantity;
+
+        BestDealBundle bestBundle;
+
+        // 5. Compare Single-Stack vs Greedy Combination
+        if (bestSingleQualifying != null && bestSingleQualifying.totalPrice <= accumulatedCost) {
+            // Single listing is cheaper or equal
+            List<BestDealResult> singleList = Collections.singletonList(bestSingleQualifying);
+            bestBundle = new BestDealBundle(currentQuery, bestSingleQualifying.matchedItemName, singleList,
+                    bestSingleQualifying.totalPrice, bestSingleQualifying.quantity, bestSingleQualifying.pricePerUnit,
+                    true, targetQuantity);
+        } else {
+            // Greedy combination bundle is cheaper
+            String name = greedyListings.get(0).matchedItemName;
+            bestBundle = new BestDealBundle(currentQuery, name, greedyListings,
+                    accumulatedCost, accumulatedQty, greedyEffectiveUnit,
+                    greedyQualifying, targetQuantity);
+        }
+
+        latestBundle = bestBundle;
+
+        boolean capExceeded = (maxPriceCap > 0 && bestBundle.effectivePricePerUnit > maxPriceCap);
 
         LOGGER.info("[Best Deal Finder] Search Complete:");
-        LOGGER.info("  Best Match Item  : {}", latestResult.matchedItemName);
-        LOGGER.info("  Price/Unit       : ${}", String.format("%.2f", latestResult.pricePerUnit));
-        LOGGER.info("  Total Price      : ${}", String.format("%.2f", latestResult.totalPrice));
-        LOGGER.info("  Quantity         : {} (Requested: {})", latestResult.quantity, latestResult.requestedQty);
-        LOGGER.info("  Page / Slot      : Page {}, Slot {}", latestResult.pageNumber, latestResult.slotIndex);
-        LOGGER.info("  Is Qualifying    : {}", latestResult.isQualifying);
+        LOGGER.info("  Item Name        : {}", bestBundle.itemName);
+        LOGGER.info("  Summary          : {}", bestBundle.getSummaryText());
+        LOGGER.info("  Effective $/Unit : ${}", String.format("%.2f", bestBundle.effectivePricePerUnit));
+        LOGGER.info("  Combined Cost    : ${}", String.format("%.2f", bestBundle.combinedTotalCost));
+        LOGGER.info("  Combined Qty     : {} (Requested: {})", bestBundle.combinedTotalQty, bestBundle.requestedQty);
+        LOGGER.info("  Is Qualifying    : {}", bestBundle.isQualifying);
         LOGGER.info("  Max Price Cap    : ${} (Cap Exceeded: {})", maxPriceCap > 0 ? DEC_FMT.format(maxPriceCap) : "None", capExceeded);
         LOGGER.info("  Auto Buy         : {}", autoBuyEnabled);
 
@@ -344,22 +493,34 @@ public class BestDealFinderHandler {
             mc.execute(() -> {
                 ProfitDetailsScreen screen = new ProfitDetailsScreen();
                 mc.setScreen(screen);
-                screen.openBestDealConfirmationModal(latestResult, capExceeded);
+                screen.openBestDealConfirmationModal(bestBundle, capExceeded);
             });
         } else {
             // Auto buy immediately!
-            executeBuySequence(mc, latestResult);
+            executeBuySequence(mc, bestBundle);
         }
     }
 
-    public static void confirmAndBuyDeal(BestDealResult deal) {
+    public static void confirmAndBuyBundle(BestDealBundle bundle) {
         Minecraft mc = Minecraft.getInstance();
-        if (deal == null || mc.player == null) return;
-        executeBuySequence(mc, deal);
+        if (bundle == null || bundle.listings.isEmpty() || mc.player == null) return;
+        executeBuySequence(mc, bundle);
     }
 
-    private static void executeBuySequence(Minecraft mc, BestDealResult deal) {
-        pendingBuyDeal = deal;
+    private static void executeBuySequence(Minecraft mc, BestDealBundle bundle) {
+        purchaseQueue.clear();
+
+        List<BestDealResult> sortedListings = new ArrayList<>(bundle.listings);
+        sortedListings.sort((a, b) -> {
+            if (a.pageNumber != b.pageNumber) return Integer.compare(a.pageNumber, b.pageNumber);
+            return Integer.compare(a.slotIndex, b.slotIndex);
+        });
+
+        purchaseQueue.addAll(sortedListings);
+        totalPurchasesInChain = purchaseQueue.size();
+        successfulPurchasesCount = 0;
+        currentPurchaseDeal = null;
+
         running = true;
         currentState = State.NAVIGATING_TO_BUY;
         lastActionTime = System.currentTimeMillis();
@@ -368,24 +529,52 @@ public class BestDealFinderHandler {
             mc.player.closeContainer();
         }
 
-        String command = "ah " + deal.targetQuery;
-        LOGGER.info("[Best Deal Finder] Navigating to purchase listing: /{} (Page {}, Slot {})", command, deal.pageNumber, deal.slotIndex);
+        processNextPurchaseQueueStep(mc);
+    }
+
+    private static void processNextPurchaseQueueStep(Minecraft mc) {
+        if (purchaseQueue.isEmpty()) {
+            running = false;
+            currentState = State.IDLE;
+            currentPurchaseDeal = null;
+            if (mc.player != null) {
+                mc.player.displayClientMessage(Component.literal("§a[Best Deal Finder] Completed " + successfulPurchasesCount + "/" + totalPurchasesInChain + " purchases in bundle!"), true);
+            }
+            return;
+        }
+
+        currentPurchaseDeal = purchaseQueue.poll();
+        pagesScanned = 0; // reset pagesScanned for navigation
+        lastActionTime = System.currentTimeMillis();
+
+        String command = "ah " + currentPurchaseDeal.targetQuery;
+        LOGGER.info("[Best Deal Finder] Queue Step {}/{}: Navigating to /{} (Page {}, Slot {})",
+                successfulPurchasesCount + 1, totalPurchasesInChain, command, currentPurchaseDeal.pageNumber, currentPurchaseDeal.slotIndex);
 
         if (mc.player.connection != null) {
             mc.player.connection.sendCommand(command);
         }
     }
 
-    private static void executePurchaseClick(Minecraft mc, AbstractContainerScreen<?> containerScreen, BestDealResult deal) {
-        if (containerScreen.getMenu() == null) return;
+    private static void abortPurchaseQueue(Minecraft mc, String reason) {
+        LOGGER.warn("[Best Deal Finder] Multi-buy chain ABORTED after {}/{} purchases. Reason: {}",
+                successfulPurchasesCount, totalPurchasesInChain, reason);
+        purchaseQueue.clear();
+        currentPurchaseDeal = null;
+        running = false;
+        currentState = State.IDLE;
+        if (mc.player != null) {
+            mc.player.displayClientMessage(Component.literal("§c[Best Deal Finder] Multi-buy aborted (" + successfulPurchasesCount + "/" + totalPurchasesInChain + " completed): " + reason), true);
+        }
+    }
+
+    private static boolean executePurchaseClick(Minecraft mc, AbstractContainerScreen<?> containerScreen, BestDealResult deal) {
+        if (containerScreen.getMenu() == null) return false;
         List<Slot> slots = containerScreen.getMenu().slots;
 
         if (deal.slotIndex < 0 || deal.slotIndex >= slots.size()) {
             LOGGER.warn("[Best Deal Finder] Slot index {} out of bounds, purchase aborted!", deal.slotIndex);
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.literal("§c[Best Deal Finder] Purchase aborted: Invalid slot index."), true);
-            }
-            return;
+            return false;
         }
 
         ItemStack currentStack = slots.get(deal.slotIndex).getItem();
@@ -393,10 +582,7 @@ public class BestDealFinderHandler {
         // Safety Re-verification before purchase click
         if (currentStack.isEmpty()) {
             LOGGER.warn("[Best Deal Finder] Slot {} is empty, listing no longer available. Purchase aborted!", deal.slotIndex);
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.literal("§c[Best Deal Finder] Purchase aborted: Listing no longer available!"), true);
-            }
-            return;
+            return false;
         }
 
         Identifier loc = BuiltInRegistries.ITEM.getKey(currentStack.getItem());
@@ -406,23 +592,18 @@ public class BestDealFinderHandler {
         if (!currentPath.equals(deal.itemPath) || currentStack.getCount() != deal.quantity || Math.abs(currentPrice - deal.totalPrice) > 0.01) {
             LOGGER.warn("[Best Deal Finder] Listing at slot {} modified (expected: {} x{} @ ${}, found: {} x{} @ ${}), purchase aborted!",
                     deal.slotIndex, deal.itemPath, deal.quantity, deal.totalPrice, currentPath, currentStack.getCount(), currentPrice);
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.literal("§c[Best Deal Finder] Purchase aborted: Listing details changed!"), true);
-            }
-            return;
+            return false;
         }
 
         // Execution of purchase click
         int containerId = containerScreen.getMenu().containerId;
         mc.gameMode.handleInventoryMouseClick(containerId, deal.slotIndex, 0, ClickType.PICKUP, mc.player);
 
-        LOGGER.info("[Best Deal Finder] AUDIT LOG - Purchase Executed: {} x{} for Total ${} (${}/ea) at Page {}, Slot {}",
-                deal.matchedItemName, deal.quantity, String.format("%.2f", deal.totalPrice), String.format("%.2f", deal.pricePerUnit), deal.pageNumber, deal.slotIndex);
+        LOGGER.info("[Best Deal Finder] AUDIT LOG - Purchase Executed ({}/{}): {} x{} for Total ${} (${}/ea) at Page {}, Slot {}",
+                successfulPurchasesCount + 1, totalPurchasesInChain, deal.matchedItemName, deal.quantity,
+                String.format("%.2f", deal.totalPrice), String.format("%.2f", deal.pricePerUnit), deal.pageNumber, deal.slotIndex);
 
-        if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal(
-                    "§a[Best Deal Finder] Purchased " + deal.matchedItemName + " x" + deal.quantity + " for $" + DEC_FMT.format(deal.totalPrice) + "!"), true);
-        }
+        return true;
     }
 
     private static double parsePriceFromStack(ItemStack stack) {
