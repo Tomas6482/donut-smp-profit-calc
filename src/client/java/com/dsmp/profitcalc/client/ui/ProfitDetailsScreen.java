@@ -75,6 +75,25 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private LabelComponent trapdoorPage1CeilingLabel;
     private LabelComponent trapdoorSuggestedSizeLabel;
 
+    private final Runnable trackerUpdateListener = () -> {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) {
+            mc.execute(this::refreshData);
+        }
+    };
+
+    @Override
+    protected void init() {
+        super.init();
+        ProfitTracker.getInstance().addUpdateListener(trackerUpdateListener);
+    }
+
+    @Override
+    public void removed() {
+        ProfitTracker.getInstance().removeUpdateListener(trackerUpdateListener);
+        super.removed();
+    }
+
     @Override
     protected @NotNull OwoUIAdapter<FlowLayout> createAdapter() {
         return OwoUIAdapter.create(this, UIContainers::verticalFlow);
