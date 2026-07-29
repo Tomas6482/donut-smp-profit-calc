@@ -46,6 +46,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
     public static int selectedTab = -1; // -1 means load from config
     private static boolean isDropdownOpen = false;
+    private static boolean isToolsDropdownOpen = false;
 
     private FlowLayout mainCard;
     private FlowLayout leftPanel;
@@ -53,7 +54,6 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
     private LabelComponent gainedValueLabel;
     private LabelComponent spentValueLabel;
     private LabelComponent netProfitValueLabel;
-    private ButtonComponent loggingToggleButton;
     private OverlayContainer<FlowLayout> activeOverlayModal;
 
     // Calculator UI Components
@@ -123,23 +123,20 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
         FlowLayout headerRight = UIContainers.horizontalFlow(Sizing.content(), Sizing.content());
         headerRight.margins(Insets.left(20));
+        headerRight.verticalAlignment(VerticalAlignment.CENTER);
 
-        boolean verbose = ProfitConfig.getInstance().isVerboseLogging();
-        loggingToggleButton = UIComponents.button(Component.literal(verbose ? "Logging: ON" : "Logging: OFF"), btn -> {
-            boolean newState = !ProfitConfig.getInstance().isVerboseLogging();
-            ProfitConfig.getInstance().setVerboseLogging(newState);
-            loggingToggleButton.setMessage(Component.literal(newState ? "Logging: ON" : "Logging: OFF"));
+        ButtonComponent toolsDropdownBtn = UIComponents.button(Component.literal("Tools" + (isToolsDropdownOpen ? " ▲" : " ▼")), btn -> {
+            isToolsDropdownOpen = !isToolsDropdownOpen;
+            isDropdownOpen = false;
+            Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
         });
-        loggingToggleButton.margins(Insets.right(4));
+        toolsDropdownBtn.margins(Insets.right(4));
 
-        ButtonComponent settingsBtn = UIComponents.button(Component.literal("Settings"), btn -> openSettingsModal());
+        ButtonComponent settingsBtn = UIComponents.button(Component.literal("Settings ⚙"), btn -> {
+            isToolsDropdownOpen = false;
+            openSettingsModal();
+        });
         settingsBtn.margins(Insets.right(4));
-
-        ButtonComponent dumperBtn = UIComponents.button(Component.literal("Price Dumper"), btn -> openPriceDumperSetupModal());
-        dumperBtn.margins(Insets.right(4));
-
-        ButtonComponent bestDealBtn = UIComponents.button(Component.literal("Best Deal Finder"), btn -> openBestDealFinderModal(null));
-        bestDealBtn.margins(Insets.right(4));
 
         ButtonComponent undoLastBtn = UIComponents.button(Component.literal("Undo"), btn -> {
             ProfitTracker.getInstance().removeLatestTransaction();
@@ -152,32 +149,46 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             refreshData();
         });
 
-        ButtonComponent checkAllBtn = UIComponents.button(Component.literal("Check All"), btn -> {
-            if (AutoFlipCalcHandler.isRunning()) {
-                if (Minecraft.getInstance().player != null) {
-                    Minecraft.getInstance().player.displayClientMessage(Component.literal("§c[Auto Flip] A scan is already in progress!"), true);
-                }
-                return;
-            }
-            AutoFlipCalcHandler.startBatch(
-                List.of(FlipMode.BONE, FlipMode.KELP, FlipMode.OAK_LOG, FlipMode.STICKY_PISTON,
-                        FlipMode.GOLDEN_APPLE, FlipMode.BOOKSHELF, FlipMode.TRAPDOOR),
-                this::openCheckAllResultsModal
-            );
-        });
-        checkAllBtn.margins(Insets.right(4));
-
-        headerRight.child(loggingToggleButton);
-        headerRight.child(checkAllBtn);
-        headerRight.child(bestDealBtn);
+        headerRight.child(toolsDropdownBtn);
         headerRight.child(settingsBtn);
-        headerRight.child(dumperBtn);
         headerRight.child(undoLastBtn);
         headerRight.child(resetBtn);
 
         headerBar.child(title);
         headerBar.child(headerRight);
         mainCard.child(headerBar);
+
+        if (isToolsDropdownOpen) {
+            FlowLayout toolsMenu = UIContainers.verticalFlow(Sizing.fixed(140), Sizing.content());
+            toolsMenu.surface(Surface.flat(0xF0101216).and(Surface.outline(0xFF333B48)))
+                    .padding(Insets.of(4))
+                    .margins(Insets.of(2, 0, 4, 0));
+
+            ButtonComponent bestDealOpt = UIComponents.button(
+                Component.literal("🔍 Best Deal Finder"),
+                b -> {
+                    isToolsDropdownOpen = false;
+                    openBestDealFinderModal(null);
+                }
+            );
+            bestDealOpt.sizing(Sizing.fill(100), Sizing.fixed(16));
+            bestDealOpt.margins(Insets.vertical(1));
+
+            ButtonComponent dumperOpt = UIComponents.button(
+                Component.literal("📋 Price Dumper"),
+                b -> {
+                    isToolsDropdownOpen = false;
+                    openPriceDumperSetupModal();
+                }
+            );
+            dumperOpt.sizing(Sizing.fill(100), Sizing.fixed(16));
+            dumperOpt.margins(Insets.vertical(1));
+
+            toolsMenu.child(bestDealOpt);
+            toolsMenu.child(dumperOpt);
+
+            mainCard.child(toolsMenu);
+        }
 
         FlowLayout statsSummaryBar = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
         statsSummaryBar.margins(Insets.of(8, 8, 0, 0));
@@ -638,6 +649,23 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         }
 
         leftPanel.child(calcResultsBox);
+
+        ButtonComponent checkAllFlipsBtn = UIComponents.button(Component.literal("🔍 Check All Flips"), btn -> {
+            if (AutoFlipCalcHandler.isRunning()) {
+                if (Minecraft.getInstance().player != null) {
+                    Minecraft.getInstance().player.displayClientMessage(Component.literal("§c[Auto Flip] A scan is already in progress!"), true);
+                }
+                return;
+            }
+            AutoFlipCalcHandler.startBatch(
+                List.of(AutoFlipCalcHandler.FlipMode.BONE, AutoFlipCalcHandler.FlipMode.KELP, AutoFlipCalcHandler.FlipMode.OAK_LOG, AutoFlipCalcHandler.FlipMode.STICKY_PISTON,
+                        AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE, AutoFlipCalcHandler.FlipMode.BOOKSHELF, AutoFlipCalcHandler.FlipMode.TRAPDOOR),
+                this::openCheckAllResultsModal
+            );
+        });
+        checkAllFlipsBtn.sizing(Sizing.fill(100), Sizing.fixed(20));
+        checkAllFlipsBtn.margins(Insets.top(6));
+        leftPanel.child(checkAllFlipsBtn);
     }
 
     private void updateCalc() {
@@ -1037,9 +1065,15 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         delayInputsRow.child(maxDelayInput);
         modalCard.child(delayInputsRow);
 
-        LabelComponent ahHeader = UIComponents.label(Component.literal("AH Transaction Tracking:"));
-        ahHeader.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(10, 0, 4, 0));
-        modalCard.child(ahHeader);
+        LabelComponent loggingHeader = UIComponents.label(Component.literal("Logging & Tracking Options:"));
+        loggingHeader.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(10, 0, 4, 0));
+        modalCard.child(loggingHeader);
+
+        CheckboxComponent verboseLoggingCb = UIComponents.checkbox(Component.literal("Verbose Debug Logging"));
+        verboseLoggingCb.checked(ProfitConfig.getInstance().isVerboseLogging());
+        verboseLoggingCb.onChanged(val -> ProfitConfig.getInstance().setVerboseLogging(val));
+        verboseLoggingCb.margins(Insets.bottom(4));
+        modalCard.child(verboseLoggingCb);
 
         CheckboxComponent recordAhCb = UIComponents.checkbox(Component.literal("Record AH Sells & Purchases"));
         recordAhCb.checked(ProfitConfig.getInstance().isRecordAhTransactions());
