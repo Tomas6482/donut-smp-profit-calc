@@ -29,6 +29,18 @@ public class OrderChatListener {
     private static final Pattern BUY_CONFIRM_CHAT_PATTERN = Pattern.compile("you\\s+(?:have\\s+)?ordered\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s*(.*)", Pattern.CASE_INSENSITIVE);
     private static final Pattern BUY_CHAT_PATTERN_1 = Pattern.compile("created\\s+(?:buy\\s+)?order\\s+for\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+for\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)", Pattern.CASE_INSENSITIVE);
 
+    // AH Buy: "You bought 64 Spruce Trapdoors for $ 25K"
+    private static final Pattern AH_BUY_CHAT_PATTERN = Pattern.compile(
+            "^you\\s+bought\\s+([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+?)\\s+for\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    // AH Sell: "CrystalDemon0_0 bought your Oak Trapdoor for $4.5K"
+    private static final Pattern AH_SELL_CHAT_PATTERN = Pattern.compile(
+            "^([a-zA-Z0-9_.-]+)\\s+bought\\s+your\\s+(.+?)\\s+for\\s+\\$\\s*([0-9.,]+\\s*[kmbKMB]?)",
+            Pattern.CASE_INSENSITIVE
+    );
+
     public void register() {
         ClientReceiveMessageEvents.GAME.register(this::onGameMessage);
     }
@@ -39,14 +51,14 @@ public class OrderChatListener {
         if (rawText == null || rawText.isEmpty()) return;
 
         String text = stripColorCodes(rawText);
+        String lowerText = text.toLowerCase().trim();
 
-        if (!text.toLowerCase().contains("order") && !text.toLowerCase().contains("sold") && !text.toLowerCase().contains("delivered") && !text.toLowerCase().contains("received")) {
+        if (!lowerText.contains("order") && !lowerText.contains("sold") && !lowerText.contains("delivered") && !lowerText.contains("received") && !lowerText.contains("bought")) {
             return;
         }
 
-        // Filter out public broadcast sales from OTHER players (must start with "You" or contain "you delivered/sold/received")
-        String lowerText = text.toLowerCase().trim();
-        if (!lowerText.startsWith("you ") && !lowerText.contains("you delivered") && !lowerText.contains("you sold") && !lowerText.contains("you received") && !lowerText.contains("you ordered") && !lowerText.contains("created buy order")) {
+        // Filter out public broadcast sales from OTHER players (must start with "You" or contain "you delivered/sold/received" or "bought your")
+        if (!lowerText.startsWith("you ") && !lowerText.contains("you delivered") && !lowerText.contains("you sold") && !lowerText.contains("you received") && !lowerText.contains("you ordered") && !lowerText.contains("created buy order") && !lowerText.contains("bought your")) {
             if (ProfitConfig.getInstance().isVerboseLogging()) {
                 LOGGER.info("[DONUT PROFIT/CHAT] Ignored public broadcast message from another player: '{}'", text);
             }
@@ -185,6 +197,52 @@ public class OrderChatListener {
                         LOGGER.info("[DONUT PROFIT/CHAT] Matched BUY Pattern 1: {} x{} @ ${}/ea (Total: ${})", item, amount, unitPrice, total);
                     }
                     ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.BUY, item, amount, unitPrice, total));
+                    return;
+                }
+            }
+
+            // Check AH BUY Pattern ("You bought 64 Spruce Trapdoors for $ 25K")
+            Matcher mAhBuy = AH_BUY_CHAT_PATTERN.matcher(text);
+            if (mAhBuy.find()) {
+                int amount = parseAmount(mAhBuy.group(1));
+                String item = cleanItemName(mAhBuy.group(2));
+                double totalPrice = parsePrice(mAhBuy.group(3));
+                if (totalPrice > 0 && amount > 0) {
+                    double pricePerItem = totalPrice / (double) amount;
+                    if (ProfitConfig.getInstance().isRecordAhTransactions()) {
+                        ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.BUY, item, amount, pricePerItem, totalPrice));
+                        if (ProfitConfig.getInstance().isVerboseLogging()) {
+                            LOGGER.info("[DONUT PROFIT/CHAT] Recorded AH BUY: {} x{} @ ${}/ea (Total: ${})", item, amount, pricePerItem, totalPrice);
+                        }
+                    }
+                    return;
+                }
+            }
+
+            // Check AH SELL Pattern ("CrystalDemon0_0 bought your Oak Trapdoor for $4.5K")
+            Matcher mAhSell = AH_SELL_CHAT_PATTERN.matcher(text);
+            if (mAhSell.find()) {
+                String buyer = mAhSell.group(1).trim();
+                String itemRaw = mAhSell.group(2).trim();
+                double totalPrice = parsePrice(mAhSell.group(3));
+
+                int amount = 1;
+                String item = cleanItemName(itemRaw);
+                Matcher mAmtPrefix = Pattern.compile("^([0-9.,]+\\s*[kmbKMB]?x?)\\s+(.+)").matcher(itemRaw);
+                if (mAmtPrefix.find()) {
+                    amount = parseAmount(mAmtPrefix.group(1));
+                    item = cleanItemName(mAmtPrefix.group(2));
+                }
+
+                if (totalPrice > 0 && amount > 0) {
+                    double pricePerItem = totalPrice / (double) amount;
+                    if (ProfitConfig.getInstance().isRecordAhTransactions()) {
+                        ProfitTracker.getInstance().addTransaction(new Transaction(TransactionType.SELL, item, amount, pricePerItem, totalPrice));
+                        if (ProfitConfig.getInstance().isVerboseLogging()) {
+                            LOGGER.info("[DONUT PROFIT/CHAT] Recorded AH SELL (Buyer: {}): {} x{} @ ${}/ea (Total: ${})", buyer, item, amount, pricePerItem, totalPrice);
+                        }
+                    }
+                    return;
                 }
             }
         } catch (Exception e) {

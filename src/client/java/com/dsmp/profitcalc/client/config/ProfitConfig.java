@@ -32,6 +32,7 @@ public class ProfitConfig {
     private boolean playSoundOnTransaction = true;
     private boolean persistDataOnRestart = true;
     private boolean showStatusHud = true;
+    private boolean recordAhTransactions = true;
     private boolean verboseLogging = false;
     private int themeColorHex = 0xD0101216; // Default Dark Glass
 
@@ -118,6 +119,9 @@ public class ProfitConfig {
 
     public boolean isSavedBestDealAutoBuy() { return savedBestDealAutoBuy; }
     public void setSavedBestDealAutoBuy(boolean val) { this.savedBestDealAutoBuy = val; save(); }
+
+    public boolean isRecordAhTransactions() { return recordAhTransactions; }
+    public void setRecordAhTransactions(boolean val) { this.recordAhTransactions = val; save(); }
 
     // Unified Configurable Command Delays (Custom Min/Max Textboxes, default 400-600ms)
     private int commandMinDelayMs = 400;

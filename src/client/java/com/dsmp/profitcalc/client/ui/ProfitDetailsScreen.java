@@ -1013,6 +1013,16 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
         delayInputsRow.child(maxDelayInput);
         modalCard.child(delayInputsRow);
 
+        LabelComponent ahHeader = UIComponents.label(Component.literal("AH Transaction Tracking:"));
+        ahHeader.color(Color.ofRgb(0x9CA3AF)).margins(Insets.of(10, 0, 4, 0));
+        modalCard.child(ahHeader);
+
+        CheckboxComponent recordAhCb = UIComponents.checkbox(Component.literal("Record AH Sells & Purchases"));
+        recordAhCb.checked(ProfitConfig.getInstance().isRecordAhTransactions());
+        recordAhCb.onChanged(val -> ProfitConfig.getInstance().setRecordAhTransactions(val));
+        recordAhCb.margins(Insets.bottom(4));
+        modalCard.child(recordAhCb);
+
         activeOverlayModal = UIContainers.overlay(modalCard);
         activeOverlayModal.closeOnClick(true);
         uiAdapter.rootComponent.child(activeOverlayModal);
