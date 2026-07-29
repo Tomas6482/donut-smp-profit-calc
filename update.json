@@ -1,5 +1,5 @@
 {
-  "version": "1.1.1",
-  "changelog": "Persist GUI inputs and active tab across sessions; add Raw Kelp, Dried Kelp Block, and Charcoal smelting profit analysis",
-  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.1.1/donut-smp-profit-calc-1.1.1.jar"
+  "version": "1.1.2",
+  "changelog": "Fixed Auto Updater with dynamic version resolution and GitHub Releases API fetching",
+  "download_url": "https://github.com/Tomas6482/donut-smp-profit-calc/releases/download/v1.1.2/donut-smp-profit-calc-1.1.2.jar"
 }
