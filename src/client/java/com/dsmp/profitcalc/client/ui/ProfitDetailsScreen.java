@@ -26,6 +26,8 @@ import io.wispforest.owo.ui.core.OwoUIAdapter;
 import io.wispforest.owo.ui.core.Sizing;
 import io.wispforest.owo.ui.core.Surface;
 import io.wispforest.owo.ui.core.VerticalAlignment;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
@@ -42,6 +44,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
     public static int selectedTab = -1; // -1 means load from config
     private static boolean isDropdownOpen = false;
+    private static boolean finderSortByMargin = false;
 
     private FlowLayout mainCard;
     private FlowLayout leftPanel;
@@ -214,6 +217,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             case 3: activeFlipTitle = "Sticky Piston Flip"; break;
             case 4: activeFlipTitle = "Golden Apple Flip"; break;
             case 5: activeFlipTitle = "Bookshelf Flip"; break;
+            case 6: activeFlipTitle = "Auto Flip Finder"; break;
             case 0:
             default: activeFlipTitle = "Bone Flip"; break;
         }
@@ -236,7 +240,8 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
 
             String[] options = {
                 "Bone Flip", "Kelp Flip", "Oak Log Flip",
-                "Sticky Piston Flip", "Golden Apple Flip", "Bookshelf Flip"
+                "Sticky Piston Flip", "Golden Apple Flip", "Bookshelf Flip",
+                "Auto Flip Finder"
             };
 
             for (int i = 0; i < options.length; i++) {
@@ -479,53 +484,137 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             qtyInput.text(config.getSavedBonesQty());
             qtyInput.onChanged().subscribe(s -> { config.setSavedBonesQty(s); updateCalc(); });
             qtyInput.margins(Insets.bottom(4));
-            leftPanel.child(qtyInput);
+        } else if (selectedTab == 6) {
+            // --- AUTO FLIP FINDER ---
+            FlowLayout sortRow = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+            sortRow.margins(Insets.bottom(4));
+            ButtonComponent sortToggleBtn = UIComponents.button(
+                Component.literal(finderSortByMargin ? "Sort: By Margin %" : "Sort: By Total Profit"),
+                b -> {
+                    finderSortByMargin = !finderSortByMargin;
+                    Minecraft.getInstance().setScreen(new ProfitDetailsScreen());
+                }
+            );
+            sortToggleBtn.sizing(Sizing.fill(100), Sizing.fixed(16));
+            sortRow.child(sortToggleBtn);
+            leftPanel.child(sortRow);
+
+            // Table Header
+            FlowLayout finderHeader = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+            finderHeader.padding(Insets.of(3)).surface(Surface.flat(0x80232936));
+            finderHeader.child(UIComponents.label(Component.literal("Item")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(75), Sizing.content()));
+            finderHeader.child(UIComponents.label(Component.literal("Profit")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(60), Sizing.content()));
+            finderHeader.child(UIComponents.label(Component.literal("Margin")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(50), Sizing.content()));
+            finderHeader.child(UIComponents.label(Component.literal("Qty")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(40), Sizing.content()));
+            finderHeader.child(UIComponents.label(Component.literal("Conf")).color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(25), Sizing.content()));
+            leftPanel.child(finderHeader);
+
+            // Results List
+            List<com.dsmp.profitcalc.client.flipfinder.FlipResult> results = new ArrayList<>(com.dsmp.profitcalc.client.flipfinder.FlipFinderHandler.getLatestResults());
+            if (finderSortByMargin) {
+                results.sort((a, b) -> Double.compare(b.marginPct, a.marginPct));
+            } else {
+                results.sort((a, b) -> Double.compare(b.totalProfit, a.totalProfit));
+            }
+
+            FlowLayout finderContainer = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+            if (results.isEmpty()) {
+                LabelComponent empty = UIComponents.label(Component.literal("No flips scanned yet. Click 'Scan All Flips' below!"));
+                empty.color(Color.ofRgb(0x6B7280)).margins(Insets.of(6));
+                finderContainer.child(empty);
+            } else {
+                int rIdx = 0;
+                for (com.dsmp.profitcalc.client.flipfinder.FlipResult res : results) {
+                    FlowLayout row = UIContainers.horizontalFlow(Sizing.fill(100), Sizing.content());
+                    row.padding(Insets.of(2, 3, 2, 3));
+                    int bg = (rIdx % 2 == 0) ? 0x40181C24 : 0x2011141A;
+                    row.surface(Surface.flat(bg));
+
+                    LabelComponent itemLbl = UIComponents.label(Component.literal(res.outputItem));
+                    itemLbl.color(Color.ofRgb(0xF3F4F6)).sizing(Sizing.fixed(75), Sizing.content());
+
+                    boolean isPos = res.totalProfit >= 0;
+                    LabelComponent profitLbl = UIComponents.label(Component.literal(String.format("$%,.0f", res.totalProfit)));
+                    profitLbl.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(60), Sizing.content());
+
+                    LabelComponent marginLbl = UIComponents.label(Component.literal(String.format("%.1f%%", res.marginPct)));
+                    marginLbl.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444)).sizing(Sizing.fixed(50), Sizing.content());
+
+                    LabelComponent qtyLbl = UIComponents.label(Component.literal(String.format("%.0f", res.maxRealisticCraftQty)));
+                    qtyLbl.color(Color.ofRgb(0x9CA3AF)).sizing(Sizing.fixed(40), Sizing.content());
+
+                    LabelComponent confLbl = UIComponents.label(Component.literal(res.lowConfidence ? "⚠" : "✔"));
+                    confLbl.color(Color.ofRgb(res.lowConfidence ? 0xF59E0B : 0x10B981)).sizing(Sizing.fixed(25), Sizing.content());
+
+                    row.child(itemLbl);
+                    row.child(profitLbl);
+                    row.child(marginLbl);
+                    row.child(qtyLbl);
+                    row.child(confLbl);
+
+                    finderContainer.child(row);
+                    rIdx++;
+                }
+            }
+
+            ScrollContainer<FlowLayout> finderScroll = UIContainers.verticalScroll(Sizing.fill(100), Sizing.fixed(120), finderContainer);
+            finderScroll.margins(Insets.bottom(4));
+            leftPanel.child(finderScroll);
         }
 
-        // Auto Check Button
-        ButtonComponent autoCheckBtn = UIComponents.button(Component.literal("Auto Check Prices"), btn -> {
-            switch (selectedTab) {
-                case 0: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BONE); break;
-                case 1: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.KELP); break;
-                case 2: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.OAK_LOG); break;
-                case 3: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.STICKY_PISTON); break;
-                case 4: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE); break;
-                case 5: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BOOKSHELF); break;
+        // Auto Check / Scan Button
+        ButtonComponent autoCheckBtn = UIComponents.button(
+            Component.literal(selectedTab == 6 ? "Scan All Flips" : "Auto Check Prices"),
+            btn -> {
+                if (selectedTab == 6) {
+                    com.dsmp.profitcalc.client.flipfinder.FlipFinderHandler.start(com.dsmp.profitcalc.client.flipfinder.FlipRecipeRegistry.getAll());
+                } else {
+                    switch (selectedTab) {
+                        case 0: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BONE); break;
+                        case 1: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.KELP); break;
+                        case 2: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.OAK_LOG); break;
+                        case 3: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.STICKY_PISTON); break;
+                        case 4: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE); break;
+                        case 5: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BOOKSHELF); break;
+                    }
+                }
             }
-        });
+        );
         autoCheckBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
         autoCheckBtn.margins(Insets.bottom(4));
         leftPanel.child(autoCheckBtn);
 
-        // Dynamic Calculation Results Container
-        FlowLayout calcResultsBox = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
-        calcResultsBox.surface(Surface.flat(0x600C0D0B).and(Surface.outline(0xFF333B48)))
-                .padding(Insets.of(6));
+        if (selectedTab != 6) {
+            // Dynamic Calculation Results Container
+            FlowLayout calcResultsBox = UIContainers.verticalFlow(Sizing.fill(100), Sizing.content());
+            calcResultsBox.surface(Surface.flat(0x600C0D0B).and(Surface.outline(0xFF333B48)))
+                    .padding(Insets.of(6));
 
-        calcCostLabel = UIComponents.label(Component.literal("Cost: —")).color(Color.ofRgb(0xD1D5DB));
-        calcOutputLabel = UIComponents.label(Component.literal("Output: —")).color(Color.ofRgb(0xD1D5DB));
-        calcRevenueBreakevenLabel = UIComponents.label(Component.literal("Breakeven: —")).color(Color.ofRgb(0x9CA3AF));
-        calcProfitLabel = UIComponents.label(Component.literal("Profit: $0")).color(Color.ofRgb(0x10B981));
-        calcPctLabel = UIComponents.label(Component.literal("Margin: 0.0%")).color(Color.ofRgb(0x10B981));
+            calcCostLabel = UIComponents.label(Component.literal("Cost: —")).color(Color.ofRgb(0xD1D5DB));
+            calcOutputLabel = UIComponents.label(Component.literal("Output: —")).color(Color.ofRgb(0xD1D5DB));
+            calcRevenueBreakevenLabel = UIComponents.label(Component.literal("Breakeven: —")).color(Color.ofRgb(0x9CA3AF));
+            calcProfitLabel = UIComponents.label(Component.literal("Profit: $0")).color(Color.ofRgb(0x10B981));
+            calcPctLabel = UIComponents.label(Component.literal("Margin: 0.0%")).color(Color.ofRgb(0x10B981));
 
-        calcResultsBox.child(calcCostLabel);
-        calcResultsBox.child(calcOutputLabel);
-        calcResultsBox.child(calcRevenueBreakevenLabel);
-
-        calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
-        calcResultsBox.child(calcProfitLabel);
-        calcResultsBox.child(calcPctLabel);
-
-        if (selectedTab == 1) {
-            calcSmeltedProfitLabel = UIComponents.label(Component.literal("Smelted Profit: $0")).color(Color.ofRgb(0x3B82F6));
-            calcSmeltedPctLabel = UIComponents.label(Component.literal("Smelted ROI: 0.0%")).color(Color.ofRgb(0x3B82F6));
+            calcResultsBox.child(calcCostLabel);
+            calcResultsBox.child(calcOutputLabel);
+            calcResultsBox.child(calcRevenueBreakevenLabel);
 
             calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
-            calcResultsBox.child(calcSmeltedProfitLabel);
-            calcResultsBox.child(calcSmeltedPctLabel);
-        }
+            calcResultsBox.child(calcProfitLabel);
+            calcResultsBox.child(calcPctLabel);
 
-        leftPanel.child(calcResultsBox);
+            if (selectedTab == 1) {
+                calcSmeltedProfitLabel = UIComponents.label(Component.literal("Smelted Profit: $0")).color(Color.ofRgb(0x3B82F6));
+                calcSmeltedPctLabel = UIComponents.label(Component.literal("Smelted ROI: 0.0%")).color(Color.ofRgb(0x3B82F6));
+
+                calcResultsBox.child(UIComponents.box(Sizing.fill(100), Sizing.fixed(1)).margins(Insets.vertical(2)));
+                calcResultsBox.child(calcSmeltedProfitLabel);
+                calcResultsBox.child(calcSmeltedPctLabel);
+            }
+
+            leftPanel.child(calcResultsBox);
+        }
     }
 
     private void updateCalc() {
