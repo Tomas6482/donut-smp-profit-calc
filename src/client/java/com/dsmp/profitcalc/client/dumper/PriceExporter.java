@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class PriceExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/PriceExporter");
@@ -88,31 +89,35 @@ public class PriceExporter {
     private static String generateTxtReport(List<DumpResult> results) {
         StringBuilder sb = new StringBuilder();
         sb.append("======================================================\n");
-        sb.append("DONUT SMP PRICE DUMP REPORT\n");
+        sb.append("DONUT SMP ACCURATE 15-ITEM PRICE DUMP REPORT\n");
         sb.append("Generated: ").append(DATE_FMT.format(new Date())).append("\n");
-        sb.append("Total Items Scanned: ").append(results.size()).append("\n");
+        sb.append("Total Queries Scanned: ").append(results.size()).append("\n");
         sb.append("======================================================\n\n");
 
         for (DumpResult res : results) {
-            sb.append(String.format("[%-5s] %s\n", res.getSource(), res.getItemName()));
-            if (res.getSampleSize() == 0) {
-                sb.append("  Sample Size : 0 listings (No valid matches)\n\n");
+            sb.append(String.format("[%s] Query: %s\n", res.getSource(), res.getQuery()));
+            List<DumpResult.ItemDumpInfo> items = res.getItems();
+
+            if (items.isEmpty()) {
+                sb.append("  Items Scanned: 0 (No valid matches found on Page 1)\n\n");
                 continue;
             }
 
-            sb.append(String.format("  Sample Size : %d listings\n", res.getSampleSize()));
-            sb.append(String.format("  Avg Top 10  : %s\n", CURRENCY_FMT.format(res.getAvgTop10())));
+            sb.append("  First ").append(items.size()).append(" Items Scanned:\n");
+            int idx = 1;
+            for (DumpResult.ItemDumpInfo item : items) {
+                sb.append(String.format("  --------------------------------------------------\n"));
+                sb.append(String.format("  #%d: %s (%s)\n", idx++, item.getName(), item.getItemId()));
+                sb.append(String.format("      Max Stack Size : %d\n", item.getMaxStackSize()));
+                sb.append(String.format("      Listed Qty     : %d\n", item.getQuantity()));
+                sb.append(String.format("      Unit Price     : %s\n", CURRENCY_FMT.format(item.getUnitPrice())));
+                sb.append("      Stack Multiplier Prices:\n");
 
-            sb.append("  Top 5 Prices: ");
-            List<Double> top5 = res.getTop5();
-            for (int i = 0; i < top5.size(); i++) {
-                sb.append(CURRENCY_FMT.format(top5.get(i)));
-                if (i < top5.size() - 1) sb.append(", ");
+                for (Map.Entry<Integer, Double> entry : item.getStackPrices().entrySet()) {
+                    sb.append(String.format("        %-4dx : %s\n", entry.getKey(), CURRENCY_FMT.format(entry.getValue())));
+                }
             }
-            sb.append("\n");
-
-            sb.append(String.format("  Range       : Min %s - Max %s\n\n",
-                    CURRENCY_FMT.format(res.getLowest()), CURRENCY_FMT.format(res.getHighest())));
+            sb.append("  --------------------------------------------------\n\n");
         }
 
         sb.append("======================================================\n");

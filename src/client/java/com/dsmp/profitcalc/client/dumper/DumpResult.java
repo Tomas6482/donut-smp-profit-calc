@@ -2,58 +2,80 @@ package com.dsmp.profitcalc.client.dumper;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class DumpResult {
-    private final String itemName;
+
+    public static class ItemDumpInfo {
+        private final String name;
+        private final String itemId;
+        private final int maxStackSize;
+        private final int quantity;
+        private final double unitPrice;
+        private final Map<Integer, Double> stackPrices; // e.g. 1 -> price, 4 -> price, 8 -> price, etc.
+
+        public ItemDumpInfo(String name, String itemId, int maxStackSize, int quantity, double unitPrice, Map<Integer, Double> stackPrices) {
+            this.name = name;
+            this.itemId = itemId;
+            this.maxStackSize = maxStackSize;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+            this.stackPrices = stackPrices != null ? Collections.unmodifiableMap(new LinkedHashMap<>(stackPrices)) : Collections.emptyMap();
+        }
+
+        public String getName() { return name; }
+        public String getItemId() { return itemId; }
+        public int getMaxStackSize() { return maxStackSize; }
+        public int getQuantity() { return quantity; }
+        public double getUnitPrice() { return unitPrice; }
+        public Map<Integer, Double> getStackPrices() { return stackPrices; }
+    }
+
+    private final String query;
     private final String source; // "ORDER" or "AH"
-    private final List<Double> top5;
-    private final double avgTop10;
-    private final double highest;
-    private final double lowest;
-    private final int sampleSize;
+    private final List<ItemDumpInfo> items;
     private final long timestamp;
 
-    public DumpResult(String itemName, String source, List<Double> top5, double avgTop10, double highest, double lowest, int sampleSize) {
-        this.itemName = itemName;
+    public DumpResult(String query, String source, List<ItemDumpInfo> items) {
+        this.query = query;
         this.source = source;
-        this.top5 = top5 != null ? Collections.unmodifiableList(new ArrayList<>(top5)) : Collections.emptyList();
-        this.avgTop10 = avgTop10;
-        this.highest = highest;
-        this.lowest = lowest;
-        this.sampleSize = sampleSize;
+        this.items = items != null ? Collections.unmodifiableList(new ArrayList<>(items)) : Collections.emptyList();
         this.timestamp = System.currentTimeMillis();
     }
 
-    public String getItemName() {
-        return itemName;
-    }
-
-    public String getSource() {
-        return source;
-    }
-
-    public List<Double> getTop5() {
-        return top5;
-    }
+    public String getQuery() { return query; }
+    public String getItemName() { return query; }
+    public String getSource() { return source; }
+    public List<ItemDumpInfo> getItems() { return items; }
+    public int getSampleSize() { return items.size(); }
+    public long getTimestamp() { return timestamp; }
 
     public double getAvgTop10() {
-        return avgTop10;
+        if (items.isEmpty()) return 0.0;
+        double sum = 0.0;
+        for (ItemDumpInfo info : items) {
+            sum += info.getUnitPrice();
+        }
+        return sum / items.size();
     }
 
     public double getHighest() {
-        return highest;
+        if (items.isEmpty()) return 0.0;
+        double high = 0.0;
+        for (ItemDumpInfo info : items) {
+            if (info.getUnitPrice() > high) high = info.getUnitPrice();
+        }
+        return high;
     }
 
     public double getLowest() {
-        return lowest;
-    }
-
-    public int getSampleSize() {
-        return sampleSize;
-    }
-
-    public long getTimestamp() {
-        return timestamp;
+        if (items.isEmpty()) return 0.0;
+        double low = Double.MAX_VALUE;
+        for (ItemDumpInfo info : items) {
+            if (info.getUnitPrice() < low) low = info.getUnitPrice();
+        }
+        return low == Double.MAX_VALUE ? 0.0 : low;
     }
 }

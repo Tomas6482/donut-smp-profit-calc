@@ -239,6 +239,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             case 4 -> "Golden Apple Flip";
             case 5 -> "Bookshelf Flip";
             case 6 -> "Trapdoor Flip";
+            case 7 -> "Charcoal Flip";
             default -> "Bone Flip";
         };
 
@@ -522,6 +523,34 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             stepperRow.child(nextBtn);
             stepperRow.margins(Insets.bottom(4));
             leftPanel.child(stepperRow);
+        } else if (selectedTab == 7) {
+            // --- CHARCOAL FLIP ---
+            leftPanel.child(UIComponents.label(Component.literal("Cheapest Log Price ($/log):")).color(Color.ofRgb(0x9CA3AF)));
+            bonePriceInput = UIComponents.textBox(Sizing.fill(100));
+            bonePriceInput.setTextColorUneditable(0xE0E0E0);
+            bonePriceInput.setMaxLength(16);
+            bonePriceInput.text(config.getSavedCheapestLogPrice());
+            bonePriceInput.onChanged().subscribe(s -> { config.setSavedCheapestLogPrice(s); updateCalc(); });
+            bonePriceInput.margins(Insets.bottom(2));
+            leftPanel.child(bonePriceInput);
+
+            leftPanel.child(UIComponents.label(Component.literal("Charcoal Buy Price ($/ea):")).color(Color.ofRgb(0x9CA3AF)));
+            targetPriceInput = UIComponents.textBox(Sizing.fill(100));
+            targetPriceInput.setTextColorUneditable(0xE0E0E0);
+            targetPriceInput.setMaxLength(16);
+            targetPriceInput.text(config.getSavedCharcoalPrice());
+            targetPriceInput.onChanged().subscribe(s -> { config.setSavedCharcoalPrice(s); updateCalc(); });
+            targetPriceInput.margins(Insets.bottom(2));
+            leftPanel.child(targetPriceInput);
+
+            leftPanel.child(UIComponents.label(Component.literal("Log Qty:")).color(Color.ofRgb(0x9CA3AF)));
+            qtyInput = UIComponents.textBox(Sizing.fill(100));
+            qtyInput.setTextColorUneditable(0xE0E0E0);
+            qtyInput.setMaxLength(16);
+            qtyInput.text(config.getSavedBonesQty());
+            qtyInput.onChanged().subscribe(s -> { config.setSavedBonesQty(s); updateCalc(); });
+            qtyInput.margins(Insets.bottom(4));
+            leftPanel.child(qtyInput);
         }
 
         // Auto Check Button
@@ -534,6 +563,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                 case 4: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE); break;
                 case 5: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.BOOKSHELF); break;
                 case 6: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.TRAPDOOR); break;
+                case 7: AutoFlipCalcHandler.start(AutoFlipCalcHandler.FlipMode.CHARCOAL); break;
             }
         });
         autoCheckBtn.sizing(Sizing.fill(100), Sizing.fixed(18));
@@ -588,7 +618,7 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
             }
             AutoFlipCalcHandler.startBatch(
                 List.of(AutoFlipCalcHandler.FlipMode.BONE, AutoFlipCalcHandler.FlipMode.KELP, AutoFlipCalcHandler.FlipMode.OAK_LOG, AutoFlipCalcHandler.FlipMode.STICKY_PISTON,
-                        AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE, AutoFlipCalcHandler.FlipMode.BOOKSHELF, AutoFlipCalcHandler.FlipMode.TRAPDOOR),
+                        AutoFlipCalcHandler.FlipMode.GOLDEN_APPLE, AutoFlipCalcHandler.FlipMode.BOOKSHELF, AutoFlipCalcHandler.FlipMode.TRAPDOOR, AutoFlipCalcHandler.FlipMode.CHARCOAL),
                 this::openCheckAllResultsModal
             );
         });
@@ -861,6 +891,28 @@ public class ProfitDetailsScreen extends BaseOwoScreen<FlowLayout> {
                         trapdoorSuggestedSizeLabel.color(Color.ofRgb(0xEF4444));
                     }
                 }
+            } else if (selectedTab == 7) {
+                // --- CHARCOAL FLIP ---
+                double logPrice = p1;
+                double charcoalPrice = p2;
+                double logs = qty;
+                double cost = logs * logPrice;
+                double revenue = logs * charcoalPrice;
+                double profit = revenue - cost;
+                double breakeven = logPrice;
+                double margin = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+
+                calcCostLabel.text(Component.literal("Log Cost: $" + DEC_FMT.format(cost)));
+                calcOutputLabel.text(Component.literal("Charcoal Rev: $" + DEC_FMT.format(revenue)));
+                calcRevenueBreakevenLabel.text(Component.literal("Breakeven: $" + DEC_FMT.format(breakeven) + "/ea"));
+
+                boolean isPos = profit >= 0;
+                String sign = isPos ? "+" : "-";
+                calcProfitLabel.text(Component.literal("Profit: " + sign + "$" + DEC_FMT.format(Math.abs(profit))));
+                calcProfitLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
+
+                calcPctLabel.text(Component.literal("Margin: " + (isPos ? "+" : "") + String.format("%.1f%%", margin)));
+                calcPctLabel.color(Color.ofRgb(isPos ? 0x10B981 : 0xEF4444));
             }
         } catch (Exception ignored) {}
     }

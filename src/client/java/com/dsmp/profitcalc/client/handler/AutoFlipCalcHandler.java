@@ -39,7 +39,8 @@ public class AutoFlipCalcHandler {
         STICKY_PISTON,
         GOLDEN_APPLE,
         BOOKSHELF,
-        TRAPDOOR
+        TRAPDOOR,
+        CHARCOAL
     }
 
     public static class FlipProfitResult {
@@ -237,6 +238,17 @@ public class AutoFlipCalcHandler {
                 taskQueue.add(new ScanTask("order oak log", "oak_log"));
                 taskQueue.add(new ScanTask("ah trapdoor", "ah_trapdoor_64"));
                 taskQueue.add(new ScanTask("ah trapdoor", "ah_trapdoor_page1"));
+                break;
+            case CHARCOAL:
+                taskQueue.add(new ScanTask("order oak log", "oak_log"));
+                taskQueue.add(new ScanTask("order spruce log", "spruce_log"));
+                taskQueue.add(new ScanTask("order birch log", "birch_log"));
+                taskQueue.add(new ScanTask("order jungle log", "jungle_log"));
+                taskQueue.add(new ScanTask("order acacia log", "acacia_log"));
+                taskQueue.add(new ScanTask("order dark oak log", "dark_oak_log"));
+                taskQueue.add(new ScanTask("order mangrove log", "mangrove_log"));
+                taskQueue.add(new ScanTask("order cherry log", "cherry_log"));
+                taskQueue.add(new ScanTask("order charcoal", "charcoal"));
                 break;
         }
 
@@ -482,6 +494,10 @@ public class AutoFlipCalcHandler {
                 if (path.equals("bookshelf") || name.contains("bookshelf")) {
                     matchKey = "bookshelf";
                 }
+            } else if (targetKey.endsWith("_log")) {
+                if (path.equals(targetKey) || name.equalsIgnoreCase(targetKey.replace("_", " "))) {
+                    matchKey = targetKey;
+                }
             }
 
             if (matchKey != null) {
@@ -685,6 +701,21 @@ public class AutoFlipCalcHandler {
             config.setSavedTrapdoorPage1Ceiling("0");
         }
 
+        String[] LOG_KEYS = {"oak_log", "spruce_log", "birch_log", "jungle_log", "acacia_log", "dark_oak_log", "mangrove_log", "cherry_log"};
+        double cheapestP = Double.MAX_VALUE;
+        String cheapestK = "oak_log";
+        for (String lKey : LOG_KEYS) {
+            Double p = finalComputedPrices.get(lKey);
+            if (p != null && p > 0 && p < cheapestP) {
+                cheapestP = p;
+                cheapestK = lKey;
+            }
+        }
+        if (cheapestP < Double.MAX_VALUE) {
+            config.setSavedCheapestLogPrice(DEC_FMT.format(cheapestP));
+            config.setSavedCheapestLogKey(cheapestK);
+        }
+
         if (batchModeActive) {
             batchCurrentIndex++;
             startNextBatchStep(mc);
@@ -702,6 +733,7 @@ public class AutoFlipCalcHandler {
             case GOLDEN_APPLE: targetTab = 4; break;
             case BOOKSHELF: targetTab = 5; break;
             case TRAPDOOR: targetTab = 6; break;
+            case CHARCOAL: targetTab = 7; break;
         }
 
         final int tabIdx = targetTab;
@@ -728,6 +760,7 @@ public class AutoFlipCalcHandler {
             case GOLDEN_APPLE -> "Golden Apple Flip";
             case BOOKSHELF -> "Bookshelf Flip";
             case TRAPDOOR -> "Trapdoor Flip";
+            case CHARCOAL -> "Charcoal Flip";
         };
 
         try {
@@ -831,6 +864,21 @@ public class AutoFlipCalcHandler {
                     double profit = totalRevenue - totalCost;
                     double marginPct = totalCost > 0 ? (profit / totalCost) * 100.0 : 0.0;
                     return new FlipProfitResult(mode, name, profit, marginPct, true, selectedStackSize + "x Stack");
+                }
+                case CHARCOAL: {
+                    double charcoalP = parseDouble(config.getSavedCharcoalPrice(), 0.0);
+                    double logP = parseDouble(config.getSavedCheapestLogPrice(), 0.0);
+                    String logKey = config.getSavedCheapestLogKey();
+                    double qty = parseDouble(config.getSavedBonesQty(), 100000.0);
+                    if (logP <= 0 || charcoalP <= 0) return new FlipProfitResult(mode, name, 0, 0, false, "Missing log or charcoal price");
+
+                    double cost = qty * logP;
+                    double revenue = qty * charcoalP;
+                    double profit = revenue - cost;
+                    double marginPct = cost > 0 ? (profit / cost) * 100.0 : 0.0;
+                    String logDisplayName = logKey.replace("_", " ");
+                    logDisplayName = Character.toUpperCase(logDisplayName.charAt(0)) + logDisplayName.substring(1);
+                    return new FlipProfitResult(mode, name, profit, marginPct, true, "Cheapest: " + logDisplayName);
                 }
             }
         } catch (Exception e) {

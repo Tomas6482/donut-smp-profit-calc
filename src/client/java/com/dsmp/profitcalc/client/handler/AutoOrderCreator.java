@@ -623,8 +623,7 @@ public class AutoOrderCreator {
         List<GuiEventListener> widgets = flattenWidgets(screen);
         String cleanQuery = itemQuery.trim().replace("_", " ").toLowerCase(Locale.ROOT);
 
-        Button exactMatch = null;
-        List<Button> containsMatches = new ArrayList<>();
+        List<Button> candidateButtons = new ArrayList<>();
 
         for (GuiEventListener listener : widgets) {
             if (listener instanceof Button button) {
@@ -632,6 +631,7 @@ public class AutoOrderCreator {
                 if (btnText.isEmpty()) continue;
 
                 String lowerText = btnText.toLowerCase(Locale.ROOT);
+                String rawMsg = button.getMessage() != null ? button.getMessage().getString().toLowerCase(Locale.ROOT) : "";
 
                 // Ignore navigation and standard control buttons
                 if (isControlButtonLabel(lowerText)) {
@@ -644,32 +644,59 @@ public class AutoOrderCreator {
                     return button;
                 }
 
-                if (lowerText.contains(cleanQuery)) {
-                    containsMatches.add(button);
+                if (isItemCandidateMatch(cleanQuery, lowerText, rawMsg)) {
+                    candidateButtons.add(button);
                 }
             }
         }
 
-        LOGGER.info("[Auto Order Creator] findMatchingItemGridButton for query '{}': exact={}, contains={} (total widgets={})",
-                cleanQuery, exactMatch != null, containsMatches.size(), widgets.size());
+        LOGGER.info("[Auto Order Creator] findMatchingItemGridButton for query '{}': candidates={} (total widgets={})",
+                cleanQuery, candidateButtons.size(), widgets.size());
 
-        if (containsMatches.size() == 1) {
-            LOGGER.info("[Auto Order Creator] Unique contains candidate: '{}'", getCleanWidgetText(containsMatches.get(0)));
-            return containsMatches.get(0);
-        } else if (containsMatches.size() > 1) {
-            // Pick the shortest text match (most specific) — e.g. "Oak Log" wins over "Oak Log Stripped"
-            Button best = containsMatches.get(0);
-            for (Button b : containsMatches) {
+        if (candidateButtons.size() == 1) {
+            LOGGER.info("[Auto Order Creator] Unique candidate: '{}'", getCleanWidgetText(candidateButtons.get(0)));
+            return candidateButtons.get(0);
+        } else if (candidateButtons.size() > 1) {
+            // Pick the shortest text match (most specific)
+            Button best = candidateButtons.get(0);
+            for (Button b : candidateButtons) {
                 if (getCleanWidgetText(b).length() < getCleanWidgetText(best).length()) {
                     best = b;
                 }
             }
-            LOGGER.info("[Auto Order Creator] Multiple contains candidates — picking shortest: '{}'", getCleanWidgetText(best));
+            LOGGER.info("[Auto Order Creator] Multiple candidates — picking shortest: '{}'", getCleanWidgetText(best));
             return best;
         }
 
         LOGGER.warn("[Auto Order Creator] findMatchingItemGridButton returned NULL for query '{}'", cleanQuery);
         return null;
+    }
+
+    private static boolean isItemCandidateMatch(String cleanQuery, String lowerText, String rawMsg) {
+        // Must contain cleanQuery
+        if (!lowerText.contains(cleanQuery) && !rawMsg.contains(cleanQuery.replace(" ", "_"))) {
+            return false;
+        }
+
+        // Strict rejection for "hopper": do not select minecart hopper
+        if (cleanQuery.equals("hopper")) {
+            if (lowerText.contains("minecart") || lowerText.contains("cart") ||
+                rawMsg.contains("minecart") || rawMsg.contains("cart")) {
+                return false;
+            }
+        }
+
+        // Reject candidates with extra modifier keywords not in user's query
+        String[] modifiers = {"minecart", "cart", "boat", "chest", "stripped", "wall", "stairs", "slab", "fence", "gate", "door"};
+        for (String mod : modifiers) {
+            if (!cleanQuery.contains(mod)) {
+                if (lowerText.contains(mod) || rawMsg.contains(mod)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     private static boolean isControlButtonLabel(String labelText) {

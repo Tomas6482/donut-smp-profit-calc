@@ -5,42 +5,30 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 
 public class PriceDumperHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger("donut-smp-profit-calc/PriceDumper");
 
-    // Configurable quantity thresholds
-    public static final int DEFAULT_AH_MIN_QTY = 64;
-    public static final int FALLBACK_AH_MIN_QTY = 1;
-
-    public static final int DEFAULT_ORDER_MIN_QTY = 16;
-    public static final int FALLBACK_ORDER_MIN_QTY = 1;
-
-    // Pagination constants
-    public static final int MAX_PAGES_PER_QUERY = 5;
-    public static final int NEXT_PAGE_SLOT = 53; // Arrow in container GUI slot 53 (6x9 inventory bottom-right)
-
     private enum ScanStep {
         SEND_COMMAND,
         WAITING_FOR_SCREEN,
-        SCANNING_PAGE,
-        PAGING_CLICK
+        SCANNING_PAGE_1
     }
 
     private static class DumpTask {
-        final String query; // Canonical item ID, e.g. "quartz_block"
+        final String query;
         final String source; // "ORDER" or "AH"
         DumpTask(String query, String source) {
             this.query = query;
@@ -57,12 +45,6 @@ public class PriceDumperHandler {
     private static ScanStep scanStep = ScanStep.SEND_COMMAND;
     private static long lastActionTime = 0;
     private static int waitScreenTicks = 0;
-
-    // Page aggregation state
-    private static int currentPageIndex = 0;
-    private static int consecutivePagesWithoutMatches = 0;
-    private static final List<Double> currentRawPrices = new ArrayList<>();
-    private static final List<Double> currentFallbackPrices = new ArrayList<>();
 
     public static void start(List<String> items, boolean order, boolean ah) {
         taskQueue.clear();
@@ -86,7 +68,7 @@ public class PriceDumperHandler {
         currentTask = null;
         scanStep = ScanStep.SEND_COMMAND;
         lastActionTime = System.currentTimeMillis();
-        LOGGER.info("[Price Dumper] Started accurate price dump scan with {} tasks.", totalTasksInitial);
+        LOGGER.info("[Price Dumper] Started price dump scan with {} tasks.", totalTasksInitial);
     }
 
     public static void stop() {
@@ -125,10 +107,6 @@ public class PriceDumperHandler {
 
             currentTask = taskQueue.poll();
             waitScreenTicks = 0;
-            currentPageIndex = 0;
-            consecutivePagesWithoutMatches = 0;
-            currentRawPrices.clear();
-            currentFallbackPrices.clear();
             scanStep = ScanStep.SEND_COMMAND;
             lastActionTime = now;
 
@@ -154,15 +132,15 @@ public class PriceDumperHandler {
         // Step 1: Waiting for container screen to open
         if (scanStep == ScanStep.WAITING_FOR_SCREEN) {
             if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
-                scanStep = ScanStep.SCANNING_PAGE;
+                scanStep = ScanStep.SCANNING_PAGE_1;
                 waitScreenTicks = 0;
-                lastActionTime = now + 100;
+                lastActionTime = now + 150;
                 return;
             }
 
-            if (waitScreenTicks > 20) {
+            if (waitScreenTicks > 25) {
                 LOGGER.warn("[Price Dumper] Timed out waiting for screen for [{}] {}", currentTask.source, currentTask.query);
-                recordResult(currentTask.query, currentTask.source, Collections.emptyList(), Collections.emptyList());
+                latestResults.add(new DumpResult(currentTask.query, currentTask.source, Collections.emptyList()));
                 if (mc.screen != null) {
                     mc.player.closeContainer();
                 }
@@ -172,174 +150,93 @@ public class PriceDumperHandler {
             return;
         }
 
-        // Step 2: Scan current page
-        if (scanStep == ScanStep.SCANNING_PAGE) {
+        // Step 2: Dump first 15 items on page 1
+        if (scanStep == ScanStep.SCANNING_PAGE_1) {
             if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
-                int matchedThisPage = scanCurrentPage(containerScreen, currentTask.query, currentTask.source);
-                currentPageIndex++;
+                List<DumpResult.ItemDumpInfo> dumpedItems = dumpFirst15Items(containerScreen);
+                latestResults.add(new DumpResult(currentTask.query, currentTask.source, dumpedItems));
 
-                if (matchedThisPage == 0) {
-                    consecutivePagesWithoutMatches++;
-                } else {
-                    consecutivePagesWithoutMatches = 0;
-                }
+                LOGGER.info("[Price Dumper] Captured [{}] {}: dumped {} items from page 1",
+                        currentTask.source, currentTask.query, dumpedItems.size());
 
-                // Check pagination conditions
-                boolean hasNextPage = isNextPageAvailable(containerScreen);
-                boolean stopPagination = !hasNextPage || consecutivePagesWithoutMatches >= 2 || currentPageIndex >= MAX_PAGES_PER_QUERY;
-
-                if (stopPagination) {
-                    recordResult(currentTask.query, currentTask.source, currentRawPrices, currentFallbackPrices);
-                    mc.player.closeContainer();
-                    currentTask = null;
-                    lastActionTime = System.currentTimeMillis();
-                } else {
-                    // Click Next Page button
-                    int containerId = containerScreen.getMenu().containerId;
-                    mc.gameMode.handleInventoryMouseClick(containerId, NEXT_PAGE_SLOT, 0, ClickType.PICKUP, mc.player);
-                    scanStep = ScanStep.PAGING_CLICK;
-                    waitScreenTicks = 0;
-                    lastActionTime = now + 150;
-                }
+                mc.player.closeContainer();
+                currentTask = null;
+                lastActionTime = System.currentTimeMillis();
             } else {
                 scanStep = ScanStep.WAITING_FOR_SCREEN;
-            }
-            return;
-        }
-
-        // Step 3: Wait briefly after clicking next page button
-        if (scanStep == ScanStep.PAGING_CLICK) {
-            if (mc.screen instanceof AbstractContainerScreen<?>) {
-                scanStep = ScanStep.SCANNING_PAGE;
-                waitScreenTicks = 0;
-                lastActionTime = now + 100;
-            } else if (waitScreenTicks > 15) {
-                recordResult(currentTask.query, currentTask.source, currentRawPrices, currentFallbackPrices);
-                currentTask = null;
-                lastActionTime = now + 200;
             }
         }
     }
 
-    private static int scanCurrentPage(AbstractContainerScreen<?> screen, String targetCanonicalId, String source) {
-        if (screen == null || screen.getMenu() == null) return 0;
+    private static List<DumpResult.ItemDumpInfo> dumpFirst15Items(AbstractContainerScreen<?> screen) {
+        List<DumpResult.ItemDumpInfo> list = new ArrayList<>();
+        if (screen == null || screen.getMenu() == null) return list;
         List<Slot> slots = screen.getMenu().slots;
-        if (slots.isEmpty()) return 0;
+        if (slots.isEmpty()) return list;
 
-        boolean isOrder = source.equalsIgnoreCase("ORDER");
-        int minQtyThreshold = isOrder ? DEFAULT_ORDER_MIN_QTY : DEFAULT_AH_MIN_QTY;
-        int matchedCount = 0;
+        int count = 0;
+        int[] STACK_MULTIPLIERS = {1, 4, 8, 12, 16, 24, 32, 48, 64};
 
-        for (int i = 0; i < Math.min(45, slots.size()); i++) {
+        for (int i = 0; i < Math.min(45, slots.size()) && count < 15; i++) {
             ItemStack stack = slots.get(i).getItem();
             if (stack.isEmpty()) continue;
 
             Identifier loc = BuiltInRegistries.ITEM.getKey(stack.getItem());
-            if (loc == null) continue;
+            String itemId = loc != null ? loc.toString() : "unknown";
+            String displayName = stack.getHoverName().getString().trim();
 
-            String stackCanonicalId = loc.getPath().toLowerCase();
+            int maxStackSize = stack.getMaxStackSize();
+            int qty = stack.getCount();
+            double unitPrice = parsePriceFromStack(stack);
 
-            // Strict exact ID matching
-            if (stackCanonicalId.equals(targetCanonicalId.toLowerCase())) {
-                double price = parsePriceFromStack(stack);
-                if (price > 0) {
-                    matchedCount++;
-                    int count = stack.getCount();
-                    if (count >= minQtyThreshold) {
-                        currentRawPrices.add(price);
-                    } else {
-                        currentFallbackPrices.add(price);
-                    }
+            if (unitPrice <= 0) continue;
+
+            Map<Integer, Double> stackPrices = new LinkedHashMap<>();
+            for (int mult : STACK_MULTIPLIERS) {
+                if (mult <= maxStackSize) {
+                    stackPrices.put(mult, unitPrice * mult);
                 }
             }
+
+            list.add(new DumpResult.ItemDumpInfo(displayName, itemId, maxStackSize, qty, unitPrice, stackPrices));
+            count++;
         }
 
-        return matchedCount;
-    }
-
-    private static boolean isNextPageAvailable(AbstractContainerScreen<?> screen) {
-        if (screen == null || screen.getMenu() == null) return false;
-        List<Slot> slots = screen.getMenu().slots;
-        if (slots.size() <= NEXT_PAGE_SLOT) return false;
-
-        ItemStack stack = slots.get(NEXT_PAGE_SLOT).getItem();
-        if (stack.isEmpty()) return false;
-
-        String name = stack.getHoverName().getString().toLowerCase();
-        Identifier loc = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        String itemId = loc != null ? loc.getPath().toLowerCase() : "";
-
-        return name.contains("next") || name.contains("page") || name.contains("-->") || itemId.contains("arrow");
-    }
-
-    private static void recordResult(String query, String source, List<Double> primaryPrices, List<Double> fallbackPrices) {
-        boolean isOrder = source.equalsIgnoreCase("ORDER");
-        int defaultThreshold = isOrder ? DEFAULT_ORDER_MIN_QTY : DEFAULT_AH_MIN_QTY;
-
-        List<Double> activePrices = primaryPrices;
-
-        if (primaryPrices.isEmpty()) {
-            if (!fallbackPrices.isEmpty()) {
-                LOGGER.warn("[Price Dumper] Query '{}' [{}] returned 0 listings with qty >= {}. Falling back to {} listings with qty < {}.",
-                        query, source, defaultThreshold, fallbackPrices.size(), defaultThreshold);
-                activePrices = fallbackPrices;
-            } else {
-                LOGGER.warn("[Price Dumper] Query '{}' [{}] returned ZERO valid matches across all scanned pages.", query, source);
-            }
-        }
-
-        if (activePrices.isEmpty()) {
-            latestResults.add(new DumpResult(query, source, Collections.emptyList(), 0.0, 0.0, 0.0, 0));
-            return;
-        }
-
-        // Sorting logic:
-        // ORDER (buy orders): higher prices are top priority to sell to (sort descending)
-        // AH (sell listings): lower prices are top priority to buy from (sort ascending)
-        if (isOrder) {
-            activePrices.sort(Collections.reverseOrder());
-        } else {
-            Collections.sort(activePrices);
-        }
-
-        int sampleSize = activePrices.size();
-        double lowest = Double.MAX_VALUE;
-        double highest = Double.MIN_VALUE;
-
-        for (double p : activePrices) {
-            if (p < lowest) lowest = p;
-            if (p > highest) highest = p;
-        }
-
-        int top5Count = Math.min(5, sampleSize);
-        List<Double> top5 = new ArrayList<>(activePrices.subList(0, top5Count));
-
-        int top10Count = Math.min(10, sampleSize);
-        double sumTop10 = 0;
-        for (int i = 0; i < top10Count; i++) {
-            sumTop10 += activePrices.get(i);
-        }
-        double avgTop10 = sumTop10 / top10Count;
-
-        latestResults.add(new DumpResult(query, source, top5, avgTop10, highest, lowest, sampleSize));
-        LOGGER.info("[Price Dumper] Captured [{}] {}: SampleSize={}, AvgTop10=${}, Range=[${} - ${}]",
-                source, query, sampleSize, String.format("%.2f", avgTop10), String.format("%.2f", lowest), String.format("%.2f", highest));
+        return list;
     }
 
     private static double parsePriceFromStack(ItemStack stack) {
-        List<net.minecraft.network.chat.Component> tooltip = stack.getTooltipLines(
-                net.minecraft.world.item.Item.TooltipContext.EMPTY,
-                Minecraft.getInstance().player,
-                net.minecraft.world.item.TooltipFlag.NORMAL
-        );
+        if (stack.isEmpty()) return 0.0;
 
-        for (net.minecraft.network.chat.Component lineComponent : tooltip) {
-            String line = lineComponent.getString();
-            if (line.contains("$")) {
-                double price = extractPriceFromLine(line);
-                if (price > 0) return price;
+        try {
+            var loreComponent = stack.get(net.minecraft.core.component.DataComponents.LORE);
+            if (loreComponent != null) {
+                for (net.minecraft.network.chat.Component comp : loreComponent.lines()) {
+                    String line = comp.getString();
+                    if (line.contains("$")) {
+                        double p = extractPriceFromLine(line);
+                        if (p > 0) return p;
+                    }
+                }
             }
-        }
+        } catch (Exception ignored) {}
+
+        try {
+            List<net.minecraft.network.chat.Component> tooltip = stack.getTooltipLines(
+                    net.minecraft.world.item.Item.TooltipContext.EMPTY,
+                    Minecraft.getInstance().player,
+                    net.minecraft.world.item.TooltipFlag.NORMAL
+            );
+
+            for (net.minecraft.network.chat.Component lineComponent : tooltip) {
+                String line = lineComponent.getString();
+                if (line.contains("$")) {
+                    double p = extractPriceFromLine(line);
+                    if (p > 0) return p;
+                }
+            }
+        } catch (Exception ignored) {}
+
         return 0.0;
     }
 
@@ -375,7 +272,7 @@ public class PriceDumperHandler {
 
         if (mc.player != null) {
             mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    String.format("§a[Price Dumper] Accurate dump complete! Scanned %d queries.", latestResults.size())), false);
+                    String.format("§a[Price Dumper] Accurate 15-item dump complete! Scanned %d queries.", latestResults.size())), false);
         }
     }
 }

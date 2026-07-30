@@ -61,6 +61,15 @@ public class ProfitConfig {
     private String savedTrapdoorBaselinePrice = "0";
     private String savedTrapdoorPage1Ceiling = "0";
 
+    private String savedCheapestLogPrice = "24";
+    private String savedCheapestLogKey = "oak_log";
+
+    public String getSavedCheapestLogPrice() { return savedCheapestLogPrice; }
+    public void setSavedCheapestLogPrice(String val) { this.savedCheapestLogPrice = val; save(); }
+
+    public String getSavedCheapestLogKey() { return savedCheapestLogKey; }
+    public void setSavedCheapestLogKey(String val) { this.savedCheapestLogKey = val; save(); }
+
     public String getSavedOakLogPrice() { return savedOakLogPrice; }
     public void setSavedOakLogPrice(String val) { this.savedOakLogPrice = val; save(); }
 
